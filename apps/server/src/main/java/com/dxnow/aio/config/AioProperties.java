@@ -23,6 +23,9 @@ public class AioProperties {
 
   private boolean codeNodeEnabled = false;
 
+  @NotBlank
+  private String secretKey = "dev-only-change-me";
+
   public String getAppMode() {
     return appMode;
   }
@@ -69,5 +72,13 @@ public class AioProperties {
 
   public void setCodeNodeEnabled(boolean codeNodeEnabled) {
     this.codeNodeEnabled = codeNodeEnabled;
+  }
+
+  public String getSecretKey() {
+    return secretKey;
+  }
+
+  public void setSecretKey(String secretKey) {
+    this.secretKey = secretKey;
   }
 }

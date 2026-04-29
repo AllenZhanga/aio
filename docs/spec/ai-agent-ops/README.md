@@ -51,6 +51,8 @@
 | [03-data-api-design.md](./03-data-api-design.md) | 核心数据模型、管理 API、运行 API、知识库 API |
 | [04-deployment-roadmap.md](./04-deployment-roadmap.md) | Docker 部署、SaaS/私有化差异、分阶段计划 |
 | [05-codebase-layout.md](./05-codebase-layout.md) | 独立服务代码仓库、目录结构、与 Joget 的代码边界 |
+| [06-console-business-design.md](./06-console-business-design.md) | 控制台界面、SaaS 业务逻辑、应用中心、知识库、API 文档、发布检查与运行观测 |
+| [07-implementation-roadmap.md](./07-implementation-roadmap.md) | 控制台与业务能力的分阶段实施路线、验收标准和开发顺序 |
 
 ## 3. 一句话方案
 
