@@ -148,8 +148,10 @@ public class RuntimeService {
   }
 
   public AiRun getRun(ApiKeyPrincipal principal, String runId) {
-    return runRepository.findByTenantIdAndId(principal.getTenantId(), runId)
+    AiRun run = runRepository.findByTenantIdAndId(principal.getTenantId(), runId)
         .orElseThrow(() -> new EntityNotFoundException("Run not found"));
+    enforceRunScope(principal, run);
+    return run;
   }
 
   public List<AiTrace> getTraces(ApiKeyPrincipal principal, String runId) {
@@ -158,8 +160,10 @@ public class RuntimeService {
   }
 
   public AiWaitTask getWaitTask(ApiKeyPrincipal principal, String waitTaskId) {
-    return waitTaskRepository.findByTenantIdAndId(principal.getTenantId(), waitTaskId)
+    AiWaitTask task = waitTaskRepository.findByTenantIdAndId(principal.getTenantId(), waitTaskId)
         .orElseThrow(() -> new EntityNotFoundException("Wait task not found"));
+    enforceWaitTaskScope(principal, task);
+    return task;
   }
 
   @Transactional
@@ -243,7 +247,7 @@ public class RuntimeService {
     Map<String, Object> model = castMap(definition.getOrDefault("model", Collections.emptyMap()));
     Map<String, Object> prompt = castMap(definition.getOrDefault("prompt", Collections.emptyMap()));
     String query = stringValue(request.get("query"));
-    List<Map<String, Object>> retrieved = retrieveForAgent(app.getTenantId(), definition, query);
+    List<Map<String, Object>> retrieved = retrieveForAgent(app.getTenantId(), app.getWorkspaceId(), definition, query);
     String system = stringValue(prompt.getOrDefault("system", "你是 Aio 平台中的企业智能助手。"));
     if (!retrieved.isEmpty()) {
       system += "\n\n可用知识片段：\n" + joinKnowledge(retrieved);
@@ -265,7 +269,7 @@ public class RuntimeService {
   }
 
   @SuppressWarnings("unchecked")
-  private List<Map<String, Object>> retrieveForAgent(String tenantId, Map<String, Object> definition, String query) {
+  private List<Map<String, Object>> retrieveForAgent(String tenantId, String workspaceId, Map<String, Object> definition, String query) {
     Object knowledge = definition.get("knowledge");
     if (!(knowledge instanceof List)) {
       return Collections.emptyList();
@@ -276,6 +280,9 @@ public class RuntimeService {
       String datasetId = stringValue(config.get("datasetId"));
       if (datasetId.isBlank()) {
         continue;
+      }
+      if (!workspaceId.equals(knowledgeService.getDataset(tenantId, datasetId).getWorkspaceId())) {
+        throw new IllegalArgumentException("Knowledge dataset is not scoped to this workspace");
       }
       int topK = asInt(config.getOrDefault("topK", 5));
       double threshold = asDouble(config.getOrDefault("scoreThreshold", 0.0));
@@ -361,12 +368,23 @@ public class RuntimeService {
     } else if ("knowledge_retrieval".equals(type)) {
       String datasetId = stringValue(interpolate(config.get("datasetId"), context));
       String query = stringValue(interpolate(config.get("query"), context));
+      if (!run.getWorkspaceId().equals(knowledgeService.getDataset(run.getTenantId(), datasetId).getWorkspaceId())) {
+        throw new IllegalArgumentException("Knowledge dataset is not scoped to this workspace");
+      }
       output.put("chunks", knowledgeService.retrieve(run.getTenantId(), datasetId, query, asInt(config.getOrDefault("topK", 5)), asDouble(config.getOrDefault("scoreThreshold", 0.0))));
     } else if ("llm".equals(type)) {
       String prompt = stringValue(interpolate(config.getOrDefault("prompt", ""), context));
       LlmResult llm = callChatModel(run.getTenantId(), config, "你是工作流中的 LLM 节点。", prompt);
       output.put("text", llm.answer);
       output.put("usage", llm.usage);
+    } else if ("tool".equals(type)) {
+      String toolId = stringValue(interpolate(config.get("toolId"), context));
+      AiTool tool = toolRepository.findByTenantIdAndId(run.getTenantId(), toolId)
+          .filter(item -> run.getWorkspaceId().equals(item.getWorkspaceId()))
+          .filter(item -> "active".equals(item.getStatus()))
+          .orElseThrow(() -> new EntityNotFoundException("Tool not found in workspace"));
+      Object inputConfig = config.containsKey("input") ? interpolate(config.get("input"), context) : context;
+      output.putAll(toolService.executeTool(tool, castMap(inputConfig)));
     } else if ("agent".equals(type)) {
       output.put("answer", "Agent node executed: " + stringValue(interpolate(config.get("query"), context)));
     } else if ("http_request".equals(type)) {
@@ -500,6 +518,24 @@ public class RuntimeService {
       throw new IllegalArgumentException("API key is not scoped to this app");
     }
     return app;
+  }
+
+  private void enforceRunScope(ApiKeyPrincipal principal, AiRun run) {
+    if (principal.getWorkspaceId() != null && !principal.getWorkspaceId().equals(run.getWorkspaceId())) {
+      throw new IllegalArgumentException("API key is not scoped to this workspace");
+    }
+    if (principal.getAppId() != null && !principal.getAppId().equals(run.getAppId())) {
+      throw new IllegalArgumentException("API key is not scoped to this app");
+    }
+  }
+
+  private void enforceWaitTaskScope(ApiKeyPrincipal principal, AiWaitTask task) {
+    if (principal.getWorkspaceId() != null && !principal.getWorkspaceId().equals(task.getWorkspaceId())) {
+      throw new IllegalArgumentException("API key is not scoped to this workspace");
+    }
+    if (principal.getAppId() != null && !principal.getAppId().equals(task.getAppId())) {
+      throw new IllegalArgumentException("API key is not scoped to this app");
+    }
   }
 
   private Map<String, Object> newWorkflowContext(Map<String, Object> request) {

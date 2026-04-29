@@ -13,7 +13,7 @@ Aio focuses on the practical runtime pieces needed to ship AI applications witho
 - **Agent applications** with model settings, prompts, skills, tools, MCP tools, memory, and knowledge retrieval.
 - **Workflow applications** based on lightweight DAG execution for LLM, Agent, HTTP, condition, knowledge retrieval, user confirmation, and user form nodes.
 - **Human-in-the-loop automation** that pauses workflows, exposes wait tasks through APIs, and resumes execution after user submission.
-- **Knowledge base management** for datasets, documents, chunks, indexing, retrieval tests, and runtime retrieval APIs.
+- **Knowledge base management** for datasets, documents, chunks, lightweight indexing, retrieval tests, and runtime retrieval APIs.
 - **Tool and MCP integration** for HTTP tools, built-in tools, and MCP servers.
 - **Model provider management** for OpenAI-compatible or private model gateways.
 - **Runtime observability** for runs, traces, wait tasks, API keys, usage summaries, and audit events.
@@ -29,6 +29,12 @@ Aio is in early MVP implementation. The current codebase contains:
 - Console login with tenant/workspace context.
 - Admin APIs under `/api/aio/admin/**` and runtime APIs under `/v1/**`.
 - Docker packaging that builds the web console into the server image.
+
+Current MVP boundaries:
+
+- Knowledge retrieval currently uses database-backed chunking and lightweight lexical scoring. Qdrant/pgvector and provider-backed embeddings are part of the deployment architecture and roadmap, but they are not yet wired into the runtime indexer.
+- Runtime observability currently provides runs, traces, usage summaries, API Key status, and derived audit summaries. It does not yet store a dedicated per-request API call log.
+- Workflow execution supports the lightweight DAG node set in the server. The console exposes the same node families for MVP authoring, with structured node editors planned for a later iteration.
 
 ## Architecture
 
@@ -298,4 +304,3 @@ Design and implementation documents are available under `docs/spec/ai-agent-ops`
 ## License
 
 License to be decided.
-

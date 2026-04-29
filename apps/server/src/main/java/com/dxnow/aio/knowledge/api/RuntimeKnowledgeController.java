@@ -1,5 +1,6 @@
 package com.dxnow.aio.knowledge.api;
 
+import com.dxnow.aio.knowledge.domain.KbDataset;
 import com.dxnow.aio.knowledge.service.KnowledgeService;
 import com.dxnow.aio.security.ApiKeyPrincipal;
 import java.util.LinkedHashMap;
@@ -27,6 +28,7 @@ public class RuntimeKnowledgeController {
       @PathVariable String datasetId,
       @RequestBody AdminKnowledgeController.DocumentRequest request) {
     ApiKeyPrincipal principal = principal(servletRequest);
+    enforceDatasetScope(principal, knowledgeService.getDataset(principal.getTenantId(), datasetId));
     Map<String, Object> response = new LinkedHashMap<>();
     response.put("document", AdminKnowledgeController.DocumentResponse.from(knowledgeService.addDocument(principal.getTenantId(), datasetId, request.toMutation())));
     return response;
@@ -38,6 +40,7 @@ public class RuntimeKnowledgeController {
       @PathVariable String datasetId,
       @RequestBody AdminKnowledgeController.RetrieveRequest request) {
     ApiKeyPrincipal principal = principal(servletRequest);
+    enforceDatasetScope(principal, knowledgeService.getDataset(principal.getTenantId(), datasetId));
     Map<String, Object> response = new LinkedHashMap<>();
     response.put("records", knowledgeService.retrieve(principal.getTenantId(), datasetId, request.query, request.topK, request.scoreThreshold));
     return response;
@@ -45,5 +48,11 @@ public class RuntimeKnowledgeController {
 
   private ApiKeyPrincipal principal(HttpServletRequest request) {
     return (ApiKeyPrincipal) request.getAttribute(ApiKeyPrincipal.REQUEST_ATTRIBUTE);
+  }
+
+  private void enforceDatasetScope(ApiKeyPrincipal principal, KbDataset dataset) {
+    if (principal.getWorkspaceId() != null && !principal.getWorkspaceId().equals(dataset.getWorkspaceId())) {
+      throw new IllegalArgumentException("API key is not scoped to this workspace");
+    }
   }
 }

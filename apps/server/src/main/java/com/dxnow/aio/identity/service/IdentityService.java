@@ -1,5 +1,7 @@
 package com.dxnow.aio.identity.service;
 
+import com.dxnow.aio.app.domain.AiApp;
+import com.dxnow.aio.app.repository.AiAppRepository;
 import com.dxnow.aio.common.Ids;
 import com.dxnow.aio.common.Sha256;
 import com.dxnow.aio.identity.domain.ApiKey;
@@ -20,14 +22,17 @@ public class IdentityService {
   private final TenantRepository tenantRepository;
   private final WorkspaceRepository workspaceRepository;
   private final ApiKeyRepository apiKeyRepository;
+  private final AiAppRepository appRepository;
 
   public IdentityService(
       TenantRepository tenantRepository,
       WorkspaceRepository workspaceRepository,
-      ApiKeyRepository apiKeyRepository) {
+      ApiKeyRepository apiKeyRepository,
+      AiAppRepository appRepository) {
     this.tenantRepository = tenantRepository;
     this.workspaceRepository = workspaceRepository;
     this.apiKeyRepository = apiKeyRepository;
+    this.appRepository = appRepository;
   }
 
   public List<Tenant> listTenants() {
@@ -69,6 +74,18 @@ public class IdentityService {
     return apiKeyRepository.findByTenantIdOrderByCreatedAtDesc(tenantId);
   }
 
+  public List<ApiKey> listApiKeys(String tenantId, String workspaceId) {
+    requireTenant(tenantId);
+    return apiKeyRepository.findByTenantIdOrderByCreatedAtDesc(tenantId).stream()
+        .filter(apiKey -> workspaceId != null && workspaceId.equals(apiKey.getWorkspaceId()))
+        .collect(java.util.stream.Collectors.toList());
+  }
+
+  public ApiKey getApiKey(String tenantId, String apiKeyId) {
+    return apiKeyRepository.findByTenantIdAndId(tenantId, apiKeyId)
+        .orElseThrow(() -> new EntityNotFoundException("API key not found"));
+  }
+
   @Transactional
   public CreatedApiKey createApiKey(
       String tenantId,
@@ -82,6 +99,14 @@ public class IdentityService {
       workspaceRepository.findById(workspaceId)
           .filter(workspace -> tenantId.equals(workspace.getTenantId()))
           .orElseThrow(() -> new EntityNotFoundException("Workspace not found in tenant"));
+    }
+    if (appId != null && !appId.isBlank()) {
+      AiApp app = appRepository.findByTenantIdAndId(tenantId, appId)
+          .orElseThrow(() -> new EntityNotFoundException("App not found in tenant"));
+      if (workspaceId != null && !workspaceId.isBlank() && !workspaceId.equals(app.getWorkspaceId())) {
+        throw new IllegalArgumentException("API key app scope must belong to the selected workspace");
+      }
+      workspaceId = app.getWorkspaceId();
     }
 
     String secret = "sk_" + Ids.randomBase36(40);
@@ -101,8 +126,7 @@ public class IdentityService {
 
   @Transactional
   public ApiKey revokeApiKey(String tenantId, String apiKeyId) {
-    ApiKey apiKey = apiKeyRepository.findByTenantIdAndId(tenantId, apiKeyId)
-        .orElseThrow(() -> new EntityNotFoundException("API key not found"));
+    ApiKey apiKey = getApiKey(tenantId, apiKeyId);
     apiKey.revoke();
     return apiKeyRepository.save(apiKey);
   }

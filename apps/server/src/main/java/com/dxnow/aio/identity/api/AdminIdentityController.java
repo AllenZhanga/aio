@@ -74,8 +74,13 @@ public class AdminIdentityController {
 
   @GetMapping("/api-keys")
   public List<ApiKeyResponse> listApiKeys(
-      @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId) {
-    return identityService.listApiKeys(tenantId).stream()
+      @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
+      @RequestHeader(value = "X-Aio-Workspace", defaultValue = "default") String workspaceId,
+      @RequestHeader(value = "X-Aio-User", required = false) String userId) {
+    List<ApiKey> apiKeys = authService.isWorkspaceAdmin(userId)
+        ? identityService.listApiKeys(tenantId)
+        : identityService.listApiKeys(tenantId, workspaceId);
+    return apiKeys.stream()
         .map(ApiKeyResponse::from)
         .collect(Collectors.toList());
   }
@@ -83,11 +88,20 @@ public class AdminIdentityController {
   @PostMapping("/api-keys")
   public CreatedApiKeyResponse createApiKey(
       @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
+      @RequestHeader(value = "X-Aio-Workspace", defaultValue = "default") String workspaceId,
       @RequestHeader(value = "X-Aio-User", required = false) String userId,
       @Valid @RequestBody CreateApiKeyRequest request) {
+    boolean admin = authService.isWorkspaceAdmin(userId);
+    if (!admin) {
+      String requestedWorkspace = request.workspaceId == null || request.workspaceId.isBlank() ? workspaceId : request.workspaceId;
+      if (!workspaceId.equals(requestedWorkspace)) {
+        throw new ForbiddenException();
+      }
+      request.workspaceId = workspaceId;
+    }
     IdentityService.CreatedApiKey created = identityService.createApiKey(
         tenantId,
-        request.workspaceId,
+        admin ? request.workspaceId : workspaceId,
         request.appId,
         request.name,
         request.expiresAt,
@@ -98,8 +112,15 @@ public class AdminIdentityController {
   @PostMapping("/api-keys/{apiKeyId}/revoke")
   public ApiKeyResponse revokeApiKey(
       @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
+      @RequestHeader(value = "X-Aio-Workspace", defaultValue = "default") String workspaceId,
+      @RequestHeader(value = "X-Aio-User", required = false) String userId,
       @PathVariable String apiKeyId) {
-    return ApiKeyResponse.from(identityService.revokeApiKey(tenantId, apiKeyId));
+    ApiKey existing = identityService.getApiKey(tenantId, apiKeyId);
+    if (!authService.isWorkspaceAdmin(userId) && !workspaceId.equals(existing.getWorkspaceId())) {
+      throw new ForbiddenException();
+    }
+    ApiKey apiKey = identityService.revokeApiKey(tenantId, apiKeyId);
+    return ApiKeyResponse.from(apiKey);
   }
 
   public static class CreateTenantRequest {
