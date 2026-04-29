@@ -65,6 +65,7 @@ export function useAppLifecyclePage({
   const [agentDraft, setAgentDraft] = useState<AgentDraft>(defaultAgentDraft);
   const [validationReport, setValidationReport] = useState<ValidationReport | null>(null);
   const [releasePanelOpen, setReleasePanelOpen] = useState(false);
+  const [pendingPublishDefinitionJson, setPendingPublishDefinitionJson] = useState("");
 
   const selectedApp = useMemo(
     () => apps.find((item) => item.id === selectedAppId),
@@ -182,6 +183,7 @@ export function useAppLifecyclePage({
 
   async function publishSelectedApp() {
     setBusyAction("publish");
+    setPendingPublishDefinitionJson("");
     try {
       if (!selectedApp) throw new Error("请先选择一个应用");
       const definitionJson = selectedAppDefinitionJson(selectedApp);
@@ -190,14 +192,30 @@ export function useAppLifecyclePage({
         setStatus(`发布检查未通过：${report.blockingErrors} 个阻断错误`);
         return;
       }
+      setPendingPublishDefinitionJson(definitionJson);
+      setStatus("发布检查通过，请在侧边栏确认发布");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "发布检查失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function confirmPublishSelectedApp() {
+    setBusyAction("publish-confirm");
+    try {
+      if (!selectedApp) throw new Error("请先选择一个应用");
+      if (!pendingPublishDefinitionJson) throw new Error("请先点击发布并通过发布检查");
       const version = await call<{ id: string; versionNo: number }>(
         `/api/aio/admin/apps/${selectedApp.id}/versions`,
-        { method: "POST", body: JSON.stringify({ definitionJson }) },
+        { method: "POST", body: JSON.stringify({ definitionJson: pendingPublishDefinitionJson }) },
       );
       await call(`/api/aio/admin/apps/${selectedApp.id}/publish`, {
         method: "POST",
         body: JSON.stringify({ versionId: version.id }),
       });
+      setPendingPublishDefinitionJson("");
+      setReleasePanelOpen(false);
       setStatus(`${selectedApp.name} 已发布 v${version.versionNo}，发布检查通过`);
       await refreshApps();
     } catch (error) {
@@ -318,6 +336,7 @@ export function useAppLifecyclePage({
     agentDraft,
     validationReport,
     releasePanelOpen,
+    pendingPublishDefinitionJson,
     setApps,
     setAppsLoading,
     setSelectedAppId,
@@ -334,6 +353,7 @@ export function useAppLifecyclePage({
     openCreateModal,
     createApp,
     publishSelectedApp,
+    confirmPublishSelectedApp,
     validateSelectedApp,
     archiveApp,
     invokeSelectedApp,

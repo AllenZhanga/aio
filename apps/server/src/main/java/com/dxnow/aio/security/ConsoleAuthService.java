@@ -1,7 +1,12 @@
 package com.dxnow.aio.security;
 
 import com.dxnow.aio.config.AioProperties;
+import com.dxnow.aio.common.Sha256;
+import com.dxnow.aio.identity.domain.IdentityUser;
+import com.dxnow.aio.identity.domain.UserWorkspaceMembership;
 import com.dxnow.aio.identity.domain.Workspace;
+import com.dxnow.aio.identity.repository.IdentityUserRepository;
+import com.dxnow.aio.identity.repository.UserWorkspaceMembershipRepository;
 import com.dxnow.aio.identity.repository.WorkspaceRepository;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -22,14 +27,26 @@ public class ConsoleAuthService {
 
   private final AioProperties properties;
   private final WorkspaceRepository workspaceRepository;
+  private final IdentityUserRepository userRepository;
+  private final UserWorkspaceMembershipRepository membershipRepository;
 
-  public ConsoleAuthService(AioProperties properties, WorkspaceRepository workspaceRepository) {
+  public ConsoleAuthService(
+      AioProperties properties,
+      WorkspaceRepository workspaceRepository,
+      IdentityUserRepository userRepository,
+      UserWorkspaceMembershipRepository membershipRepository) {
     this.properties = properties;
     this.workspaceRepository = workspaceRepository;
+    this.userRepository = userRepository;
+    this.membershipRepository = membershipRepository;
   }
 
   @Transactional
   public ConsoleSession login(String username, String password) {
+    ConsoleSession dbSession = resolveDatabaseUser(username, password);
+    if (dbSession != null) {
+      return dbSession;
+    }
     ConsoleAccount account = resolveAccount(username, password);
     if (account == null) {
       throw new IllegalArgumentException("Invalid username or password");
@@ -61,6 +78,11 @@ public class ConsoleAuthService {
     if (userId == null || userId.isBlank()) {
       return false;
     }
+    if (userRepository.findByIdAndStatus(userId, "active")
+        .map(user -> "admin".equals(user.getRole()))
+        .orElse(false)) {
+      return true;
+    }
     return consoleAccounts().stream()
         .anyMatch(account -> userId.equals(account.username) && "admin".equals(account.role));
   }
@@ -72,11 +94,16 @@ public class ConsoleAuthService {
     if (isWorkspaceAdmin(userId)) {
       return new ArrayList<>();
     }
-    return consoleAccounts().stream()
+    List<String> workspaceIds = membershipRepository.findByUserIdAndStatus(userId, "active").stream()
+      .map(UserWorkspaceMembership::getWorkspaceId)
+      .distinct()
+      .collect(Collectors.toList());
+    workspaceIds.addAll(consoleAccounts().stream()
         .filter(account -> userId.equals(account.username))
         .map(account -> account.workspaceId)
         .distinct()
-        .collect(Collectors.toList());
+      .collect(Collectors.toList()));
+    return workspaceIds.stream().distinct().collect(Collectors.toList());
   }
 
   public ConsoleSession verify(String token) {
@@ -108,6 +135,28 @@ public class ConsoleAuthService {
       }
     }
     return null;
+  }
+
+  private ConsoleSession resolveDatabaseUser(String username, String password) {
+    if (username == null || password == null) {
+      return null;
+    }
+    IdentityUser user = userRepository.findByEmailIgnoreCaseAndStatus(username.trim(), "active")
+        .filter(item -> constantTimeEquals(item.getPasswordHash(), Sha256.hex(password)))
+        .orElse(null);
+    if (user == null) {
+      return null;
+    }
+    List<UserWorkspaceMembership> memberships = membershipRepository.findByTenantIdAndUserIdAndStatus(user.getTenantId(), user.getId(), "active");
+    if (memberships.isEmpty()) {
+      throw new IllegalArgumentException("User has no assigned workspace");
+    }
+    String workspaceId = memberships.get(0).getWorkspaceId();
+    workspaceRepository.findById(workspaceId)
+        .filter(workspace -> user.getTenantId().equals(workspace.getTenantId()))
+        .filter(workspace -> "active".equals(workspace.getStatus()))
+        .orElseThrow(() -> new IllegalArgumentException("Assigned workspace not found"));
+    return issueSession(user.getId(), user.getDisplayName(), user.getRole(), user.getTenantId(), workspaceId);
   }
 
   private List<ConsoleAccount> consoleAccounts() {
@@ -153,11 +202,21 @@ public class ConsoleAuthService {
     if (isWorkspaceAdmin(userId)) {
       return true;
     }
+    if (membershipRepository.findByUserIdAndStatus(userId, "active").stream()
+        .anyMatch(membership -> workspaceId.equals(membership.getWorkspaceId()))) {
+      return true;
+    }
     return consoleAccounts().stream()
         .anyMatch(account -> userId.equals(account.username) && workspaceId.equals(account.workspaceId));
   }
 
   private String roleForUser(String userId) {
+    String databaseRole = userRepository.findByIdAndStatus(userId, "active")
+        .map(IdentityUser::getRole)
+        .orElse(null);
+    if (databaseRole != null) {
+      return normalizeRole(databaseRole);
+    }
     return consoleAccounts().stream()
         .filter(account -> userId.equals(account.username))
         .map(account -> account.role)

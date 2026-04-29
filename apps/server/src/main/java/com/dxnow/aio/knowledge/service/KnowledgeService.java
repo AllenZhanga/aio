@@ -231,6 +231,12 @@ public class KnowledgeService {
     if (terms.isEmpty() && query.length() > 1) {
       terms.add(query);
     }
+    String compact = query.replaceAll("\\s+", "");
+    if (compact.length() > 1 && terms.size() <= 1) {
+      for (int index = 0; index < compact.length() - 1; index++) {
+        terms.add(compact.substring(index, index + 2));
+      }
+    }
     return terms;
   }
 

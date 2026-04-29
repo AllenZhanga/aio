@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowLeft, Bot, Code2, Loader2, Play, Rocket, Trash2, Workflow, X } from "lucide-react";
+import { ArrowLeft, Bot, Code2, Loader2, Play, Rocket, Trash2, Workflow, X } from "lucide-react";
 import type { AgentDraft, AppRecord, DatasetRecord, ModelOption, ValidationReport, WorkflowDesignerProps } from "../types";
 import { AgentDesigner } from "./AgentDesigner";
 import { StatePanel } from "./ui";
@@ -19,9 +19,10 @@ export function DesignerPage(props: {
   setRuntimeKey: (value: string) => void;
   validationReport: ValidationReport | null;
   releasePanelOpen: boolean;
+  pendingPublishDefinitionJson: string;
   setReleasePanelOpen: (open: boolean) => void;
   publishSelectedApp: () => Promise<void>;
-  validateSelectedApp: () => Promise<void>;
+  confirmPublishSelectedApp: () => Promise<void>;
   invokeSelectedApp: () => Promise<void>;
   archiveApp: (app: AppRecord) => Promise<void>;
   openApiDocs: (app: AppRecord) => void;
@@ -60,7 +61,6 @@ export function DesignerPage(props: {
           <button className="primaryBtn" onClick={() => props.openExperience(props.selectedApp!)}><Play size={16} /> 对话体验</button>
           <button className="ghostBtn" onClick={() => props.openObservability(props.selectedApp!)}><Play size={16} /> 运行观测</button>
           <button className="ghostBtn" onClick={() => props.openApiDocs(props.selectedApp!)}><Code2 size={16} /> API 文档</button>
-          <button className="ghostBtn" disabled={!!props.busyAction} onClick={() => void props.validateSelectedApp()}>{props.busyAction === "validate" ? <Loader2 className="spin" size={16} /> : <AlertCircle size={16} />} 发布检查</button>
           <button className="ghostBtn" disabled={!!props.busyAction} onClick={() => void props.invokeSelectedApp()}>{props.busyAction === "run" ? <Loader2 className="spin" size={16} /> : <Play size={16} />} 试运行</button>
           <button className="dangerBtn" disabled={!!props.busyAction} onClick={() => void props.archiveApp(props.selectedApp!)}>{props.busyAction === `archive-${props.selectedApp.id}` ? <Loader2 className="spin" size={16} /> : <Trash2 size={16} />} 删除</button>
           <button className="primaryBtn" disabled={!!props.busyAction} onClick={() => void props.publishSelectedApp()}>{props.busyAction === "publish" ? <Loader2 className="spin" size={16} /> : <Rocket size={16} />} 发布</button>
@@ -71,12 +71,12 @@ export function DesignerPage(props: {
       ) : (
         <WorkflowDesigner {...props.workflowProps} />
       )}
-      {props.releasePanelOpen && <ReleaseCheckPanel report={props.validationReport} close={() => props.setReleasePanelOpen(false)} />}
+      {props.releasePanelOpen && <ReleaseCheckPanel report={props.validationReport} canPublish={!!props.pendingPublishDefinitionJson} busy={props.busyAction === "publish-confirm"} close={() => props.setReleasePanelOpen(false)} confirm={() => void props.confirmPublishSelectedApp()} />}
     </section>
   );
 }
 
-function ReleaseCheckPanel({ report, close }: { report: ValidationReport | null; close: () => void }) {
+function ReleaseCheckPanel({ report, canPublish, busy, close, confirm }: { report: ValidationReport | null; canPublish: boolean; busy: boolean; close: () => void; confirm: () => void }) {
   const issues = report?.issues || [];
   return (
     <aside className="releasePanel">
@@ -94,7 +94,7 @@ function ReleaseCheckPanel({ report, close }: { report: ValidationReport | null;
           <article><strong>{report.suggestions}</strong><span>建议</span></article>
         </div>
       )}
-      {!issues.length && <StatePanel title="检查通过" text="当前定义没有阻断错误。建议发布后进入运行观测查看首轮调用 Trace。" />}
+      {!issues.length && <StatePanel title="检查通过" text="当前定义没有阻断错误。确认后才会创建版本并发布到 Runtime。" />}
       {issues.length > 0 && (
         <div className="releaseIssueList">
           {issues.map((issue) => (
@@ -107,6 +107,12 @@ function ReleaseCheckPanel({ report, close }: { report: ValidationReport | null;
           ))}
         </div>
       )}
+      <div className="releasePanelFooter">
+        <button className="ghostBtn" onClick={close}>取消</button>
+        <button className="primaryBtn" disabled={!canPublish || busy} onClick={confirm}>
+          {busy ? <Loader2 className="spin" size={16} /> : <Rocket size={16} />} 确认发布
+        </button>
+      </div>
     </aside>
   );
 }

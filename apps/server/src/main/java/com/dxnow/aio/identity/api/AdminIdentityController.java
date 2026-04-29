@@ -1,7 +1,9 @@
 package com.dxnow.aio.identity.api;
 
 import com.dxnow.aio.identity.domain.ApiKey;
+import com.dxnow.aio.identity.domain.IdentityUser;
 import com.dxnow.aio.identity.domain.Tenant;
+import com.dxnow.aio.identity.domain.UserWorkspaceMembership;
 import com.dxnow.aio.identity.domain.Workspace;
 import com.dxnow.aio.identity.service.IdentityService;
 import com.dxnow.aio.security.ConsoleAuthService;
@@ -12,9 +14,11 @@ import javax.validation.Valid;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -96,6 +100,47 @@ public class AdminIdentityController {
         .collect(Collectors.toList());
   }
 
+  @GetMapping("/users")
+  public List<UserResponse> listUsers(
+      @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
+      @RequestHeader(value = "X-Aio-User", required = false) String userId,
+      @RequestParam(value = "scope", required = false) String scope) {
+    boolean admin = authService.isWorkspaceAdmin(userId);
+    List<IdentityUser> users = admin && "all".equals(scope)
+        ? identityService.listAllUsers()
+        : identityService.listUsers(tenantId);
+    return users.stream()
+        .map(user -> UserResponse.from(user, identityService.listUserMemberships(user.getTenantId(), user.getId())))
+        .collect(Collectors.toList());
+  }
+
+  @PostMapping("/users")
+  public UserResponse createUser(
+      @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
+      @RequestHeader(value = "X-Aio-User", required = false) String userId,
+      @Valid @RequestBody CreateUserRequest request) {
+    if (!authService.isWorkspaceAdmin(userId)) {
+      throw new ForbiddenException();
+    }
+    String targetTenantId = request.tenantId == null || request.tenantId.isBlank() ? tenantId : request.tenantId;
+    IdentityUser user = identityService.createUser(targetTenantId, request.email, request.displayName, request.password, request.role, request.workspaceIds);
+    return UserResponse.from(user, identityService.listUserMemberships(user.getTenantId(), user.getId()));
+  }
+
+  @PutMapping("/users/{targetUserId}/workspaces")
+  public UserResponse assignUserWorkspaces(
+      @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
+      @RequestHeader(value = "X-Aio-User", required = false) String userId,
+      @PathVariable String targetUserId,
+      @Valid @RequestBody AssignUserWorkspacesRequest request) {
+    if (!authService.isWorkspaceAdmin(userId)) {
+      throw new ForbiddenException();
+    }
+    String targetTenantId = request.tenantId == null || request.tenantId.isBlank() ? tenantId : request.tenantId;
+    IdentityUser user = identityService.assignUserWorkspaces(targetTenantId, targetUserId, request.workspaceIds);
+    return UserResponse.from(user, identityService.listUserMemberships(user.getTenantId(), user.getId()));
+  }
+
   @PostMapping("/api-keys")
   public CreatedApiKeyResponse createApiKey(
       @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
@@ -134,6 +179,19 @@ public class AdminIdentityController {
     return ApiKeyResponse.from(apiKey);
   }
 
+  @DeleteMapping("/api-keys/{apiKeyId}")
+  public void deleteApiKey(
+      @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
+      @RequestHeader(value = "X-Aio-Workspace", defaultValue = "default") String workspaceId,
+      @RequestHeader(value = "X-Aio-User", required = false) String userId,
+      @PathVariable String apiKeyId) {
+    ApiKey existing = identityService.getApiKey(tenantId, apiKeyId);
+    if (!authService.isWorkspaceAdmin(userId) && !workspaceId.equals(existing.getWorkspaceId())) {
+      throw new ForbiddenException();
+    }
+    identityService.deleteApiKey(tenantId, apiKeyId);
+  }
+
   public static class CreateTenantRequest {
     @NotBlank
     @Size(max = 160)
@@ -154,6 +212,34 @@ public class AdminIdentityController {
     @NotBlank
     @Size(max = 160)
     public String name;
+  }
+
+  public static class CreateUserRequest {
+    @Size(max = 64)
+    public String tenantId;
+
+    @NotBlank
+    @Size(max = 190)
+    public String email;
+
+    @Size(max = 160)
+    public String displayName;
+
+    @NotBlank
+    @Size(min = 6, max = 120)
+    public String password;
+
+    @Size(max = 40)
+    public String role;
+
+    public List<String> workspaceIds;
+  }
+
+  public static class AssignUserWorkspacesRequest {
+    @Size(max = 64)
+    public String tenantId;
+
+    public List<String> workspaceIds;
   }
 
   public static class CreateApiKeyRequest {
@@ -240,6 +326,30 @@ public class AdminIdentityController {
       response.createdAt = apiKey.getCreatedAt();
       response.createdBy = apiKey.getCreatedBy();
       response.revokedAt = apiKey.getRevokedAt();
+      return response;
+    }
+  }
+
+  public static class UserResponse {
+    public String id;
+    public String tenantId;
+    public String email;
+    public String displayName;
+    public String role;
+    public String status;
+    public List<String> workspaceIds;
+    public OffsetDateTime createdAt;
+
+    static UserResponse from(IdentityUser user, List<UserWorkspaceMembership> memberships) {
+      UserResponse response = new UserResponse();
+      response.id = user.getId();
+      response.tenantId = user.getTenantId();
+      response.email = user.getEmail();
+      response.displayName = user.getDisplayName();
+      response.role = user.getRole();
+      response.status = user.getStatus();
+      response.workspaceIds = memberships.stream().map(UserWorkspaceMembership::getWorkspaceId).collect(Collectors.toList());
+      response.createdAt = user.getCreatedAt();
       return response;
     }
   }

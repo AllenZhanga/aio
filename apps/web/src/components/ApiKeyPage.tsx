@@ -1,4 +1,4 @@
-import { AlertCircle, ClipboardCheck, Code2, Loader2, Plus, RefreshCw, X } from "lucide-react";
+import { AlertCircle, ClipboardCheck, Code2, Loader2, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import type { ApiKeyRecord, AppRecord, AuthSession } from "../types";
 import { ActionBar, CopyButton, Drawer, EntityList, EntityRow, Field, StatePanel } from "./ui";
 
@@ -24,6 +24,7 @@ export function ApiKeyPage(props: {
   refreshApiKeys: () => Promise<void>;
   createApiKey: () => Promise<void>;
   revokeApiKey: (key: ApiKeyRecord) => Promise<void>;
+  deleteApiKey: (key: ApiKeyRecord) => Promise<void>;
 }) {
   const activeKeys = props.apiKeys.filter((key) => key.status === "active").length;
   const runtimePrefix = props.runtimeKey ? props.runtimeKey.slice(0, 10) : "";
@@ -65,6 +66,7 @@ export function ApiKeyPage(props: {
             <Field label="当前体验 Key 明文">
               <input type="password" value={props.runtimeKey} onChange={(event) => props.setRuntimeKey(event.target.value)} placeholder="sk_..." />
             </Field>
+            {props.runtimeKey && <CopyButton text={props.runtimeKey} />}
             <p className="mutedText">Key 列表只显示前缀，不能用于调用；体验页会使用这里的完整 Bearer Key。</p>
           </div>
       </section>
@@ -83,9 +85,18 @@ export function ApiKeyPage(props: {
               statusTone={key.status === "active" ? "success" : "cancelled"}
               meta={`${key.appId ? `仅 ${key.appId}` : `空间 ${key.workspaceId || props.session.workspaceId}`} · last used: ${formatDate(key.lastUsedAt)}`}
               actions={
-                <button className="dangerTextBtn" disabled={key.status !== "active" || props.busyAction === `api-key-revoke-${key.id}`} onClick={() => void props.revokeApiKey(key)}>
-                  {props.busyAction === `api-key-revoke-${key.id}` ? <Loader2 className="spin" size={14} /> : <X size={14} />} 吊销
-                </button>
+                <>
+                  <CopyButton text={key.keyPrefix} />
+                  {key.status === "active" ? (
+                    <button className="dangerTextBtn" disabled={props.busyAction === `api-key-revoke-${key.id}`} onClick={() => void props.revokeApiKey(key)}>
+                      {props.busyAction === `api-key-revoke-${key.id}` ? <Loader2 className="spin" size={14} /> : <X size={14} />} 吊销
+                    </button>
+                  ) : (
+                    <button className="dangerTextBtn" disabled={props.busyAction === `api-key-delete-${key.id}`} onClick={() => void props.deleteApiKey(key)}>
+                      {props.busyAction === `api-key-delete-${key.id}` ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />} 删除
+                    </button>
+                  )}
+                </>
               }
             />
           ))}

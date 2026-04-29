@@ -12,4 +12,6 @@ public interface ApiKeyRepository extends JpaRepository<ApiKey, String> {
   Optional<ApiKey> findByTenantIdAndId(String tenantId, String id);
 
   Optional<ApiKey> findByKeyHashAndStatus(String keyHash, String status);
+
+  void deleteByTenantIdAndId(String tenantId, String id);
 }

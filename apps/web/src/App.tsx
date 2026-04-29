@@ -137,7 +137,6 @@ export default function App() {
     openCreateModal,
     createApp,
     publishSelectedApp,
-    validateSelectedApp,
     archiveApp,
     invokeSelectedApp,
   } = appLifecyclePage;
@@ -504,6 +503,7 @@ export default function App() {
             refreshApiKeys={apiKeyPage.refreshApiKeys}
             createApiKey={apiKeyPage.createApiKey}
             revokeApiKey={apiKeyPage.revokeApiKey}
+            deleteApiKey={apiKeyPage.deleteApiKey}
           />
         ) : view === "org" ? (
           <OrgOpsPage {...orgOpsPage} session={authSession} />
@@ -523,9 +523,10 @@ export default function App() {
             setRuntimeKey={setRuntimeKey}
             validationReport={validationReport}
             releasePanelOpen={releasePanelOpen}
+            pendingPublishDefinitionJson={appLifecyclePage.pendingPublishDefinitionJson}
             setReleasePanelOpen={setReleasePanelOpen}
             publishSelectedApp={publishSelectedApp}
-            validateSelectedApp={validateSelectedApp}
+            confirmPublishSelectedApp={appLifecyclePage.confirmPublishSelectedApp}
             invokeSelectedApp={invokeSelectedApp}
             archiveApp={archiveApp}
             openApiDocs={openApiDocs}

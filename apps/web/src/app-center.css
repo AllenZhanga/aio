@@ -378,6 +378,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .releaseIssue strong { color: #172033; }
 .releaseIssue p { margin: 7px 0; color: #475569; font-size: 13px; line-height: 1.45; }
 .releaseIssue small { color: #8a95aa; font-family: SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
+.releasePanelFooter { position: sticky; bottom: -18px; display: flex; justify-content: flex-end; gap: 10px; margin: 16px -18px -18px; padding: 12px 18px; border-top: 1px solid #e5eaf3; background: #fff; }
 
 .apiDocsPane { display: grid; gap: 16px; }
 .apiDocsHeader { display: grid; grid-template-columns: 130px 1fr auto; align-items: center; gap: 14px; padding: 14px 0 4px; }

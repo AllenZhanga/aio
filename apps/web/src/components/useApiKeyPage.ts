@@ -98,6 +98,26 @@ export function useApiKeyPage({
     }
   }
 
+  async function deleteApiKey(key: ApiKeyRecord) {
+    if (key.status === "active") {
+      setStatus("请先吊销 API Key，再删除记录");
+      return;
+    }
+    if (!window.confirm(`确认删除已吊销的 API Key「${key.name}」？删除后列表中不再展示该记录。`)) {
+      return;
+    }
+    setBusyAction(`api-key-delete-${key.id}`);
+    try {
+      await call(`/api/aio/admin/api-keys/${key.id}`, { method: "DELETE" });
+      setStatus(`已删除 ${key.name}`);
+      await refreshApiKeys();
+    } catch (nextError) {
+      setStatus(nextError instanceof Error ? nextError.message : "API Key 删除失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
   return {
     apiKeys,
     loading,
@@ -121,5 +141,6 @@ export function useApiKeyPage({
     refreshApiKeys,
     createApiKey,
     revokeApiKey,
+    deleteApiKey,
   };
 }

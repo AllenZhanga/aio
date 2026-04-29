@@ -250,7 +250,7 @@ public class RuntimeService {
     List<Map<String, Object>> retrieved = retrieveForAgent(app.getTenantId(), app.getWorkspaceId(), definition, query);
     String system = stringValue(prompt.getOrDefault("system", "你是 Aio 平台中的企业智能助手。"));
     if (!retrieved.isEmpty()) {
-      system += "\n\n可用知识片段：\n" + joinKnowledge(retrieved);
+      system += "\n\n请优先依据以下知识片段回答；如果知识片段不足，再明确说明缺口并给出可执行建议。\n可用知识片段：\n" + joinKnowledge(retrieved);
     }
     Map<String, Object> llmInput = new LinkedHashMap<>();
     llmInput.put("system", system);

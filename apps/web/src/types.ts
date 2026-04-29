@@ -214,6 +214,16 @@ export type WorkspaceRecord = {
   status: string;
   createdAt?: string;
 };
+export type UserRecord = {
+  id: string;
+  tenantId: string;
+  email: string;
+  displayName: string;
+  role: string;
+  status: string;
+  workspaceIds: string[];
+  createdAt?: string;
+};
 export type ApiKeyRecord = {
   id: string;
   name: string;

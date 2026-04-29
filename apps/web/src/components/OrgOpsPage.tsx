@@ -1,33 +1,48 @@
 import { AlertCircle, Building2, ClipboardCheck, Code2, Loader2, Plus, RefreshCw, ShieldCheck } from "lucide-react";
-import type { ApiKeyRecord, AuditEvent, AuthSession, TenantRecord, UsageSummary, WorkspaceRecord } from "../types";
+import type { ApiKeyRecord, AuditEvent, AuthSession, TenantRecord, UserRecord, UsageSummary, WorkspaceRecord } from "../types";
 import { ActionBar, Drawer, EntityList, EntityRow, Field, StatePanel } from "./ui";
 
 export function OrgOpsPage(props: {
   tenants: TenantRecord[];
   workspaces: WorkspaceRecord[];
+  users: UserRecord[];
   apiKeys: ApiKeyRecord[];
   usage: UsageSummary | null;
   auditEvents: AuditEvent[];
   session: AuthSession;
   loading: boolean;
   error: string;
-  formOpen: "tenant" | "workspace" | "";
+  formOpen: "tenant" | "workspace" | "user" | "";
   busyAction: string;
   newTenantName: string;
   newTenantCode: string;
   newTenantPlan: string;
   workspaceTenantId: string;
   newWorkspaceName: string;
+  userTenantId: string;
+  newUserEmail: string;
+  newUserName: string;
+  newUserPassword: string;
+  newUserRole: string;
+  selectedUserWorkspaceIds: string[];
   setNewTenantName: (value: string) => void;
   setNewTenantCode: (value: string) => void;
   setNewTenantPlan: (value: string) => void;
   setWorkspaceTenantId: (value: string) => void;
   setNewWorkspaceName: (value: string) => void;
+  setUserTenantId: (value: string) => void;
+  setNewUserEmail: (value: string) => void;
+  setNewUserName: (value: string) => void;
+  setNewUserPassword: (value: string) => void;
+  setNewUserRole: (value: string) => void;
   openTenantForm: () => void;
   openWorkspaceForm: (tenantId?: string) => void;
+  openUserForm: (tenantId?: string) => void;
   closeForm: () => void;
   createTenant: () => Promise<void>;
   createWorkspace: () => Promise<void>;
+  createUser: () => Promise<void>;
+  toggleUserWorkspace: (workspaceId: string) => void;
   refreshOrg: () => Promise<void>;
 }) {
   const usage = props.usage;
@@ -46,6 +61,7 @@ export function OrgOpsPage(props: {
             {props.loading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />} 刷新
           </button>
           <button className="ghostBtn" onClick={props.openTenantForm}><Plus size={16} /> 新增租户</button>
+          <button className="ghostBtn" onClick={() => props.openUserForm()}><Plus size={16} /> 新增用户</button>
           <button className="primaryBtn" onClick={() => props.openWorkspaceForm()}><Plus size={16} /> 新增空间</button>
         </div>
       </div>
@@ -71,6 +87,7 @@ export function OrgOpsPage(props: {
       <div className="orgKpiGrid">
         <article><span>应用总数</span><strong>{usage?.applications ?? 0}</strong><p>已发布 {usage?.publishedApps ?? 0}</p></article>
         <article><span>知识资产</span><strong>{usage?.datasets ?? 0}</strong><p>文档 {usage?.documents ?? 0}</p></article>
+        <article><span>用户</span><strong>{props.users.length}</strong><p>可登录控制台账号</p></article>
         <article><span>运行次数</span><strong>{usage?.runs ?? 0}</strong><p>失败 {usage?.failedRuns ?? 0} · 等待 {usage?.waitingRuns ?? 0}</p></article>
         <article><span>等待任务</span><strong>{usage?.pendingWaitTasks ?? 0}</strong><p>待处理 / 总计 {usage?.waitTasks ?? 0}</p></article>
         <article><span>Token</span><strong>{usage?.totalTokens ?? 0}</strong><p>累计消耗</p></article>
@@ -105,6 +122,25 @@ export function OrgOpsPage(props: {
                 meta="Workspace"
               />
             ))}
+          </EntityList>
+        </section>
+        <section className="designCard">
+          <div className="sectionTitle">
+            <Building2 size={18} />
+            <div><h2>用户与空间授权</h2><p>创建可登录用户，并分配其可使用的租户和工作空间。</p></div>
+          </div>
+          <EntityList>
+            {props.users.map((user) => (
+              <EntityRow
+                key={user.id}
+                title={user.displayName || user.email}
+                subtitle={`${user.email} · ${user.tenantId}`}
+                status={user.role}
+                statusTone={user.role === "admin" ? "warning" : "success"}
+                meta={`空间：${user.workspaceIds.join(", ") || "未分配"}`}
+              />
+            ))}
+            {!props.users.length && <StatePanel title="暂无用户" text="新增用户后，可使用邮箱和密码登录并进入授权空间。" />}
           </EntityList>
         </section>
         <section className="designCard">
@@ -196,6 +232,53 @@ export function OrgOpsPage(props: {
         <Field label="空间名称">
           <input value={props.newWorkspaceName} onChange={(event) => props.setNewWorkspaceName(event.target.value)} placeholder="例如：生产空间" />
         </Field>
+      </Drawer>
+      <Drawer
+        open={props.formOpen === "user"}
+        title="新增用户"
+        description="用户创建后可直接用邮箱和密码登录，并进入分配的工作空间。"
+        onClose={props.closeForm}
+        footer={
+          <ActionBar>
+            <button className="ghostBtn" onClick={props.closeForm}>取消</button>
+            <button className="primaryBtn" disabled={props.busyAction === "user-create"} onClick={() => void props.createUser()}>
+              {props.busyAction === "user-create" ? <Loader2 className="spin" size={16} /> : <Plus size={16} />} 创建用户
+            </button>
+          </ActionBar>
+        }
+      >
+        <Field label="所属租户">
+          <select value={props.userTenantId} onChange={(event) => { props.setUserTenantId(event.target.value); }} autoFocus>
+            <option value="">请选择租户</option>
+            {props.tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name} · {tenant.code}</option>)}
+          </select>
+        </Field>
+        <Field label="邮箱 / 登录账号">
+          <input value={props.newUserEmail} onChange={(event) => props.setNewUserEmail(event.target.value)} placeholder="user@example.com" />
+        </Field>
+        <Field label="显示名称">
+          <input value={props.newUserName} onChange={(event) => props.setNewUserName(event.target.value)} placeholder="例如：运营同学" />
+        </Field>
+        <Field label="初始密码">
+          <input type="password" value={props.newUserPassword} onChange={(event) => props.setNewUserPassword(event.target.value)} placeholder="至少 6 位" />
+        </Field>
+        <Field label="角色">
+          <select value={props.newUserRole} onChange={(event) => props.setNewUserRole(event.target.value)}>
+            <option value="member">成员</option>
+            <option value="admin">管理员</option>
+          </select>
+        </Field>
+        <div className="field">
+          <span>可访问空间</span>
+          <div className="checkStack">
+            {props.workspaces.filter((workspace) => workspace.tenantId === props.userTenantId).map((workspace) => (
+              <label key={workspace.id} className="checkRow">
+                <input type="checkbox" checked={props.selectedUserWorkspaceIds.includes(workspace.id)} onChange={() => props.toggleUserWorkspace(workspace.id)} />
+                <span><strong>{workspace.name}</strong><small>{workspace.id}</small></span>
+              </label>
+            ))}
+          </div>
+        </div>
       </Drawer>
     </section>
   );
