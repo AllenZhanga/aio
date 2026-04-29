@@ -1,5 +1,5 @@
-import { AlertCircle, ArrowLeft, Bot, ClipboardCheck, Loader2, Play, Settings2, Sparkles, Workflow } from "lucide-react";
-import type { AppRecord, ExperienceMessage, RuntimeWaitTask } from "../types";
+import { AlertCircle, ArrowLeft, Bot, BookOpen, ClipboardCheck, Hash, Loader2, Play, Radio, Settings2, Sparkles, Workflow } from "lucide-react";
+import type { AppRecord, ExperienceMessage, RetrieveRecord, RuntimeUsage, RuntimeWaitTask } from "../types";
 import { Field, StatePanel } from "./ui";
 
 export function ExperiencePage(props: {
@@ -117,10 +117,86 @@ function ExperienceBubble(props: {
   }
   return (
     <article className={`chatBubble ${message.role}`}>
-      <div className="bubbleMeta">{message.role === "user" ? "用户" : message.role === "assistant" ? "AI 应用" : "系统"}{message.meta ? ` · ${message.meta}` : ""}</div>
-      <p>{message.text}</p>
+      <div className="bubbleMeta">
+        {message.role === "user" ? "用户" : message.role === "assistant" ? "AI 应用" : "系统"}{message.meta ? ` · ${message.meta}` : ""}
+        {message.streaming && <span className="streamPill"><Radio size={12} /> 接收中</span>}
+      </div>
+      <div className="bubbleText">{renderMessageText(message.text || (message.streaming ? "正在生成..." : ""))}</div>
+      {message.role === "assistant" && <RuntimeMessageDetails message={message} />}
     </article>
   );
+}
+
+function RuntimeMessageDetails({ message }: { message: ExperienceMessage }) {
+  const hasStats = !!message.conversationId || !!message.usage?.total_tokens || !!message.runId;
+  const hasKnowledge = !!message.knowledge?.length;
+  if (!hasStats && !hasKnowledge) return null;
+  return (
+    <div className="bubbleRuntimeDetails">
+      {hasStats && <UsageStrip runId={message.runId} conversationId={message.conversationId} usage={message.usage} />}
+      {hasKnowledge && <KnowledgeReferences records={message.knowledge || []} />}
+    </div>
+  );
+}
+
+function UsageStrip({ runId, conversationId, usage }: { runId?: string; conversationId?: string; usage?: RuntimeUsage }) {
+  return (
+    <div className="bubbleStats">
+      {runId && <span><Hash size={13} /> {runId}</span>}
+      {conversationId && <span>Conversation {conversationId}</span>}
+      {usage?.prompt_tokens !== undefined && <span>Prompt {usage.prompt_tokens}</span>}
+      {usage?.completion_tokens !== undefined && <span>Completion {usage.completion_tokens}</span>}
+      {usage?.total_tokens !== undefined && <strong>Token {usage.total_tokens}</strong>}
+    </div>
+  );
+}
+
+function KnowledgeReferences({ records }: { records: RetrieveRecord[] }) {
+  return (
+    <section className="bubbleEvidence">
+      <div className="bubbleEvidenceHeader"><BookOpen size={15} /> 知识库引用 <span>{records.length}</span></div>
+      <div className="bubbleEvidenceList">
+        {records.map((record, index) => (
+          <article key={`${record.chunk_id}-${index}`}>
+            <div><strong>{sourceName(record.metadata) || record.document_id}</strong><span>{scoreLabel(record.score)}</span></div>
+            <p>{record.content}</p>
+            <small>{record.document_id} · {record.chunk_id}</small>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function renderMessageText(text: string) {
+  const blocks = text.split(/\n{2,}/).filter((block) => block.trim().length > 0);
+  if (!blocks.length) return <p>正在生成...</p>;
+  return blocks.map((block, index) => <p key={`${index}-${block.slice(0, 12)}`}>{renderInline(block)}</p>);
+}
+
+function renderInline(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={`${index}-${part}`}>{part.slice(2, -2)}</strong>;
+    }
+    return <span key={`${index}-${part}`}>{part}</span>;
+  });
+}
+
+function sourceName(metadata?: string) {
+  if (!metadata) return "";
+  try {
+    const parsed = JSON.parse(metadata) as Record<string, unknown>;
+    return typeof parsed.source === "string" ? parsed.source : "";
+  } catch {
+    return "";
+  }
+}
+
+function scoreLabel(score: number) {
+  if (!Number.isFinite(score)) return "命中";
+  return `${Math.round(score * 100)}%`;
 }
 
 function waitTaskActions(task: RuntimeWaitTask) {

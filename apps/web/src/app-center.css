@@ -597,9 +597,27 @@ button.entityRow { cursor: pointer; }
 .chatBubble.wait { justify-self: start; width: min(720px, 96%); border-color: #bfdbfe; background: linear-gradient(180deg, #eff6ff, #ffffff); }
 .chatBubble.wait strong { display: block; margin-bottom: 8px; color: #1d4ed8; }
 .chatBubble p { margin: 0; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.bubbleText { display: grid; gap: 8px; }
+.bubbleText strong { font-weight: 900; color: #172033; }
+.chatBubble.user .bubbleText strong { color: #fff; }
 .bubbleMeta { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; color: #718098; font-size: 12px; font-weight: 900; }
+.streamPill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 999px; color: #2563eb; background: #edf3ff; }
 .chatBubble.user .bubbleMeta { color: rgba(255,255,255,.78); }
 .chatBubble.user p { color: #fff; }
+.bubbleRuntimeDetails { display: grid; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5ecf6; }
+.bubbleStats { display: flex; flex-wrap: wrap; gap: 7px; }
+.bubbleStats span, .bubbleStats strong { display: inline-flex; align-items: center; gap: 5px; min-height: 24px; padding: 3px 8px; border-radius: 999px; color: #526179; background: #f3f6fb; font-size: 12px; font-weight: 800; }
+.bubbleStats strong { color: #166534; background: #ecfdf3; }
+.bubbleEvidence { display: grid; gap: 8px; }
+.bubbleEvidenceHeader { display: flex; align-items: center; gap: 7px; color: #34415b; font-size: 12px; font-weight: 900; }
+.bubbleEvidenceHeader span { margin-left: auto; color: #64748b; }
+.bubbleEvidenceList { display: grid; gap: 8px; }
+.bubbleEvidenceList article { display: grid; gap: 6px; padding: 10px; border: 1px solid #dbe7f6; border-radius: 10px; background: #f8fbff; }
+.bubbleEvidenceList article > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.bubbleEvidenceList strong { min-width: 0; color: #172033; font-size: 13px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.bubbleEvidenceList span { flex: 0 0 auto; color: #1d4ed8; font-size: 12px; font-weight: 900; }
+.bubbleEvidenceList p { display: -webkit-box; color: #475569; font-size: 12px; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.bubbleEvidenceList small { color: #8a95aa; font-family: SFMono-Regular, Consolas, monospace; font-size: 11px; overflow-wrap: anywhere; }
 .chatBubble.wait textarea { min-height: 74px; }
 .chatThinking { display: inline-flex; width: fit-content; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 999px; color: #2563eb; background: #edf3ff; font-size: 13px; font-weight: 900; }
 .chatComposer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: end; padding: 14px; border-top: 1px solid #e5ecf6; background: rgba(255,255,255,.94); }

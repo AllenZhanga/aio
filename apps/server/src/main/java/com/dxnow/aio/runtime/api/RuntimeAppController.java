@@ -72,6 +72,7 @@ public class RuntimeAppController {
     Map<String, Object> outputs = runtimeService.outputMap(run);
     response.put("conversation_id", outputs.get("conversation_id"));
     response.put("answer", outputs.get("answer"));
+    response.put("knowledge", outputs.get("knowledge"));
     response.put("usage", outputs.get("usage"));
     response.put("outputs", outputs);
     return response;

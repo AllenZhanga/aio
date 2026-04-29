@@ -5,7 +5,9 @@ import type {
   AppRecord,
   AuthSession,
   ExperienceMessage,
+  RetrieveRecord,
   RuntimeResponse,
+  RuntimeUsage,
   RuntimeRunResponse,
   RuntimeWaitTask,
   WaitSubmitResponse,
@@ -153,6 +155,8 @@ export function useExperiencePage({
             role: "assistant",
             text: runtimeOutputText(run.outputs, run.status),
             meta: `run ${run.run_id} · ${run.status}`,
+            runId: run.run_id,
+            status: run.status,
           },
         ]);
         setStatus(`流程已${run.status === "success" ? "完成" : run.status}`);
@@ -181,6 +185,7 @@ export function useExperiencePage({
         role: "assistant",
         text,
         meta: `run ${response.run_id} · ${response.status}`,
+        ...runtimeResponseDetails(response),
       },
     ]);
   }
@@ -189,7 +194,7 @@ export function useExperiencePage({
     const assistantId = `msg_${Date.now()}_assistant_stream`;
     setMessages((current) => [
       ...current,
-      { id: assistantId, role: "assistant", text: "", meta: "streaming" },
+      { id: assistantId, role: "assistant", text: "", meta: "连接中", streaming: true },
     ]);
     const response = await fetch(path, {
       method: "POST",
@@ -218,21 +223,28 @@ export function useExperiencePage({
       return;
     }
     await readSseStream(response.body, (event, data) => {
+      if (event === "run_started") {
+        updateMessage(assistantId, { meta: "流式响应 · 已开始", streaming: true });
+      }
       if (event === "message") {
         const text = stringValue(data.answer || data.delta || data.content || data.text);
-        updateMessage(assistantId, { text: text || "正在生成..." });
+        updateMessage(assistantId, { text: text || "正在生成...", meta: "流式响应 · 生成中", streaming: true });
       }
       if (event === "run_completed") {
         const answer = stringValue(data.answer || data.outputs?.answer);
+        const responseDetails = runtimeResponseDetails(data as RuntimeResponse);
         updateMessage(assistantId, {
           text: answer || "已完成。",
           meta: `run ${stringValue(data.run_id)} · ${stringValue(data.status)}`,
+          streaming: false,
+          ...responseDetails,
         });
       }
       if (event === "error") {
         updateMessage(assistantId, {
           text: stringValue(data.message) || "流式响应失败",
           meta: "error",
+          streaming: false,
         });
       }
     });
@@ -279,6 +291,38 @@ export function useExperiencePage({
     sendMessage,
     submitWait,
   };
+}
+
+function runtimeResponseDetails(response: RuntimeResponse): Partial<ExperienceMessage> {
+  const outputs = response.outputs || {};
+  return {
+    runId: response.run_id,
+    status: response.status,
+    conversationId: stringValue(response.conversation_id || outputs.conversation_id),
+    knowledge: knowledgeRecords(response.knowledge || outputs.knowledge),
+    usage: usageRecord(response.usage || outputs.usage),
+  };
+}
+
+function knowledgeRecords(value: unknown): RetrieveRecord[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => item && typeof item === "object" ? item as RetrieveRecord : null)
+    .filter((item): item is RetrieveRecord => !!item && typeof item.content === "string");
+}
+
+function usageRecord(value: unknown): RuntimeUsage | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  return {
+    prompt_tokens: numberValue(record.prompt_tokens),
+    completion_tokens: numberValue(record.completion_tokens),
+    total_tokens: numberValue(record.total_tokens),
+  };
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" ? value : undefined;
 }
 
 async function readSseStream(

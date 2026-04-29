@@ -336,8 +336,16 @@ export type RuntimeResponse = {
   run_id: string;
   status: string;
   answer?: string;
+  conversation_id?: string;
+  knowledge?: RetrieveRecord[];
+  usage?: RuntimeUsage;
   outputs?: Record<string, unknown>;
   wait_task?: RuntimeWaitTask;
+};
+export type RuntimeUsage = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 };
 export type WaitSubmitResponse = {
   wait_task_id: string;
@@ -357,5 +365,11 @@ export type ExperienceMessage = {
   role: "user" | "assistant" | "system" | "wait";
   text: string;
   meta?: string;
+  runId?: string;
+  status?: string;
+  conversationId?: string;
+  knowledge?: RetrieveRecord[];
+  usage?: RuntimeUsage;
+  streaming?: boolean;
   waitTask?: RuntimeWaitTask;
 };
