@@ -552,6 +552,8 @@ button.entityRow { cursor: pointer; }
 .apiKeyPane { display: grid; gap: 16px; }
 .apiKeyGrid { display: grid; grid-template-columns: minmax(360px, .95fr) minmax(320px, 1.05fr); gap: 16px; align-items: stretch; }
 .apiKeySummary .orgKpiGrid.compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.runtimeKeyEditor { margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5eaf3; }
+.keyCreatedPanel { display: grid; gap: 10px; }
 .keySecretBox { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; margin-top: 14px; padding: 12px; border: 1px solid #bfdbfe; border-radius: 12px; background: #eff6ff; }
 .keySecretBox strong { color: #1d4ed8; font-size: 12px; }
 .keySecretBox code { min-width: 0; color: #172033; font-size: 12px; overflow-wrap: anywhere; }
@@ -698,7 +700,6 @@ button.entityRow { cursor: pointer; }
   background: #fbfdff;
   color: #172033;
   text-align: left;
-  cursor: pointer;
 }
 .knowledgeDatasetCard.active { border-color: #2563eb; background: #f4f8ff; box-shadow: 0 0 0 3px rgba(37, 99, 235, .10); }
 .knowledgeDatasetCard strong { min-width: 0; overflow: hidden; font-size: 15px; white-space: nowrap; text-overflow: ellipsis; }
@@ -707,6 +708,7 @@ button.entityRow { cursor: pointer; }
 .knowledgeDatasetCard dt { color: #8a95aa; }
 .knowledgeDatasetCard dd { min-width: 0; margin: 0; color: #334155; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .knowledgeDatasetCard .runStatus { justify-self: start; }
+.knowledgeCardActions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .radioGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .radioGrid.compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .radioCard { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px; align-items: start; padding: 10px; border: 1px solid #e1e7f2; border-radius: 10px; background: #fff; cursor: pointer; }

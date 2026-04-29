@@ -42,7 +42,12 @@ public class AdminIdentityController {
   }
 
   @PostMapping("/tenants")
-  public TenantResponse createTenant(@Valid @RequestBody CreateTenantRequest request) {
+  public TenantResponse createTenant(
+      @RequestHeader(value = "X-Aio-User", required = false) String userId,
+      @Valid @RequestBody CreateTenantRequest request) {
+    if (!authService.isWorkspaceAdmin(userId)) {
+      throw new ForbiddenException();
+    }
     return TenantResponse.from(identityService.createTenant(request.name, request.code, request.plan));
   }
 

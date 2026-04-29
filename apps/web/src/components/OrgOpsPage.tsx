@@ -1,6 +1,6 @@
-import { AlertCircle, Building2, ClipboardCheck, Code2, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import { AlertCircle, Building2, ClipboardCheck, Code2, Loader2, Plus, RefreshCw, ShieldCheck } from "lucide-react";
 import type { ApiKeyRecord, AuditEvent, AuthSession, TenantRecord, UsageSummary, WorkspaceRecord } from "../types";
-import { EntityList, EntityRow, StatePanel } from "./ui";
+import { ActionBar, Drawer, EntityList, EntityRow, Field, StatePanel } from "./ui";
 
 export function OrgOpsPage(props: {
   tenants: TenantRecord[];
@@ -11,6 +11,23 @@ export function OrgOpsPage(props: {
   session: AuthSession;
   loading: boolean;
   error: string;
+  formOpen: "tenant" | "workspace" | "";
+  busyAction: string;
+  newTenantName: string;
+  newTenantCode: string;
+  newTenantPlan: string;
+  workspaceTenantId: string;
+  newWorkspaceName: string;
+  setNewTenantName: (value: string) => void;
+  setNewTenantCode: (value: string) => void;
+  setNewTenantPlan: (value: string) => void;
+  setWorkspaceTenantId: (value: string) => void;
+  setNewWorkspaceName: (value: string) => void;
+  openTenantForm: () => void;
+  openWorkspaceForm: (tenantId?: string) => void;
+  closeForm: () => void;
+  createTenant: () => Promise<void>;
+  createWorkspace: () => Promise<void>;
   refreshOrg: () => Promise<void>;
 }) {
   const usage = props.usage;
@@ -24,9 +41,13 @@ export function OrgOpsPage(props: {
           <h1>组织运营</h1>
           <p>用于确认当前空间的权限边界、资源消耗、集成凭据和最近关键操作。</p>
         </div>
-        <button className="ghostBtn" disabled={props.loading} onClick={() => void props.refreshOrg()}>
-          {props.loading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />} 刷新
-        </button>
+        <div className="headerActions">
+          <button className="ghostBtn" disabled={props.loading} onClick={() => void props.refreshOrg()}>
+            {props.loading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />} 刷新
+          </button>
+          <button className="ghostBtn" onClick={props.openTenantForm}><Plus size={16} /> 新增租户</button>
+          <button className="primaryBtn" onClick={() => props.openWorkspaceForm()}><Plus size={16} /> 新增空间</button>
+        </div>
       </div>
       {props.error && (
         <div className="errorBanner">
@@ -70,6 +91,7 @@ export function OrgOpsPage(props: {
                 status={tenant.status}
                 statusTone="success"
                 meta="Tenant"
+                actions={<button className="ghostBtn" onClick={() => props.openWorkspaceForm(tenant.id)}><Plus size={16} /> 加空间</button>}
               />
             ))}
             {props.workspaces.map((workspace) => (
@@ -122,6 +144,59 @@ export function OrgOpsPage(props: {
           {!props.auditEvents.length && <StatePanel title="暂无审计事件" text="发布应用、创建 Key 或写入知识文档后会生成审计摘要。" />}
         </section>
       </div>
+      <Drawer
+        open={props.formOpen === "tenant"}
+        title="新增 SaaS 租户"
+        description="租户是最外层隔离边界；创建后可继续为该租户添加工作空间。"
+        onClose={props.closeForm}
+        footer={
+          <ActionBar>
+            <button className="ghostBtn" onClick={props.closeForm}>取消</button>
+            <button className="primaryBtn" disabled={props.busyAction === "tenant-create"} onClick={() => void props.createTenant()}>
+              {props.busyAction === "tenant-create" ? <Loader2 className="spin" size={16} /> : <Plus size={16} />} 创建租户
+            </button>
+          </ActionBar>
+        }
+      >
+        <Field label="租户名称">
+          <input value={props.newTenantName} onChange={(event) => props.setNewTenantName(event.target.value)} placeholder="例如：华东事业部" autoFocus />
+        </Field>
+        <Field label="租户编码">
+          <input value={props.newTenantCode} onChange={(event) => props.setNewTenantCode(event.target.value)} placeholder="例如：east-cn" />
+        </Field>
+        <Field label="套餐 / 计划">
+          <select value={props.newTenantPlan} onChange={(event) => props.setNewTenantPlan(event.target.value)}>
+            <option value="private">private</option>
+            <option value="starter">starter</option>
+            <option value="pro">pro</option>
+            <option value="enterprise">enterprise</option>
+          </select>
+        </Field>
+      </Drawer>
+      <Drawer
+        open={props.formOpen === "workspace"}
+        title="新增工作空间"
+        description="工作空间承载应用、知识库、模型供应商、API Key 和运行记录。"
+        onClose={props.closeForm}
+        footer={
+          <ActionBar>
+            <button className="ghostBtn" onClick={props.closeForm}>取消</button>
+            <button className="primaryBtn" disabled={props.busyAction === "workspace-create"} onClick={() => void props.createWorkspace()}>
+              {props.busyAction === "workspace-create" ? <Loader2 className="spin" size={16} /> : <Plus size={16} />} 创建空间
+            </button>
+          </ActionBar>
+        }
+      >
+        <Field label="所属租户">
+          <select value={props.workspaceTenantId} onChange={(event) => props.setWorkspaceTenantId(event.target.value)} autoFocus>
+            <option value="">请选择租户</option>
+            {props.tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name} · {tenant.code}</option>)}
+          </select>
+        </Field>
+        <Field label="空间名称">
+          <input value={props.newWorkspaceName} onChange={(event) => props.setNewWorkspaceName(event.target.value)} placeholder="例如：生产空间" />
+        </Field>
+      </Drawer>
     </section>
   );
 }

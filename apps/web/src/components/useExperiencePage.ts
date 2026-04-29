@@ -201,6 +201,12 @@ export function useExperiencePage({
     });
     if (!response.ok) {
       const text = await response.text();
+      if (response.status === 401) {
+        throw new Error("Runtime API Key 无效、已吊销、已过期，或当前只填了前缀。请在 API Key 菜单创建 Key，并使用创建结果里的完整 sk_ 明文。Runtime Key 列表中的 sk_xxx*** 前缀不能用于调用。");
+      }
+      if (response.status === 403) {
+        throw new Error("Runtime API Key 没有访问当前应用的权限。请创建 Workspace Key，或创建绑定当前应用的 App Key。");
+      }
       throw new Error(text || response.statusText);
     }
     const contentType = response.headers.get("content-type") || "";

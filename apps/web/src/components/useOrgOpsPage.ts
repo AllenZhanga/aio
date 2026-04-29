@@ -27,6 +27,13 @@ export function useOrgOpsPage({
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [formOpen, setFormOpen] = useState<"tenant" | "workspace" | "">("");
+  const [busyAction, setBusyAction] = useState("");
+  const [newTenantName, setNewTenantName] = useState("企业租户");
+  const [newTenantCode, setNewTenantCode] = useState("enterprise");
+  const [newTenantPlan, setNewTenantPlan] = useState("private");
+  const [workspaceTenantId, setWorkspaceTenantId] = useState("");
+  const [newWorkspaceName, setNewWorkspaceName] = useState("默认空间");
 
   async function refreshOrg() {
     setLoading(true);
@@ -35,7 +42,7 @@ export function useOrgOpsPage({
       const [nextTenants, nextWorkspaces, nextKeys, nextUsage, nextAudit] =
         await Promise.all([
           call<TenantRecord[]>("/api/aio/admin/tenants"),
-          call<WorkspaceRecord[]>("/api/aio/admin/workspaces"),
+          call<WorkspaceRecord[]>("/api/aio/admin/workspaces?scope=all"),
           call<ApiKeyRecord[]>("/api/aio/admin/api-keys"),
           call<UsageSummary>("/api/aio/admin/usage-summary"),
           call<AuditEvent[]>("/api/aio/admin/audit-events"),
@@ -67,6 +74,69 @@ export function useOrgOpsPage({
     }
   }
 
+  function openTenantForm() {
+    setFormOpen("tenant");
+  }
+
+  function openWorkspaceForm(tenantId?: string) {
+    setWorkspaceTenantId(tenantId || tenants[0]?.id || "");
+    setFormOpen("workspace");
+  }
+
+  function closeForm() {
+    setFormOpen("");
+  }
+
+  async function createTenant() {
+    if (!newTenantName.trim() || !newTenantCode.trim()) {
+      setStatus("请填写租户名称和租户编码");
+      return;
+    }
+    setBusyAction("tenant-create");
+    try {
+      const tenant = await call<TenantRecord>("/api/aio/admin/tenants", {
+        method: "POST",
+        body: JSON.stringify({
+          name: newTenantName.trim(),
+          code: newTenantCode.trim(),
+          plan: newTenantPlan.trim() || "private",
+        }),
+      });
+      setWorkspaceTenantId(tenant.id);
+      setStatus(`已创建租户 ${tenant.name}`);
+      closeForm();
+      await refreshOrg();
+    } catch (nextError) {
+      setStatus(nextError instanceof Error ? nextError.message : "租户创建失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function createWorkspace() {
+    if (!workspaceTenantId || !newWorkspaceName.trim()) {
+      setStatus("请选择租户并填写空间名称");
+      return;
+    }
+    setBusyAction("workspace-create");
+    try {
+      const workspace = await call<WorkspaceRecord>("/api/aio/admin/workspaces", {
+        method: "POST",
+        body: JSON.stringify({
+          tenantId: workspaceTenantId,
+          name: newWorkspaceName.trim(),
+        }),
+      });
+      setStatus(`已创建空间 ${workspace.name}`);
+      closeForm();
+      await refreshOrg();
+    } catch (nextError) {
+      setStatus(nextError instanceof Error ? nextError.message : "空间创建失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
   return {
     tenants,
     workspaces,
@@ -75,6 +145,23 @@ export function useOrgOpsPage({
     auditEvents,
     loading,
     error,
+    formOpen,
+    busyAction,
+    newTenantName,
+    newTenantCode,
+    newTenantPlan,
+    workspaceTenantId,
+    newWorkspaceName,
+    setNewTenantName,
+    setNewTenantCode,
+    setNewTenantPlan,
+    setWorkspaceTenantId,
+    setNewWorkspaceName,
+    openTenantForm,
+    openWorkspaceForm,
+    closeForm,
+    createTenant,
+    createWorkspace,
     refreshOrg,
     refreshWorkspaceOptions,
   };

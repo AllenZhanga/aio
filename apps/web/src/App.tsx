@@ -225,6 +225,7 @@ export default function App() {
   }, [authSession?.token, selectedApp?.id]);
   useEffect(() => {
     if (runtimeKey) localStorage.setItem("aio.runtimeKey", runtimeKey);
+    else localStorage.removeItem("aio.runtimeKey");
   }, [runtimeKey]);
   useEffect(() => {
     if (authSession && view === "observability")
@@ -486,11 +487,18 @@ export default function App() {
             loading={apiKeyPage.loading}
             error={apiKeyPage.error}
             session={authSession}
+            apps={apps}
+            runtimeKey={runtimeKey}
             newName={apiKeyPage.newName}
+            scopeType={apiKeyPage.scopeType}
+            selectedAppId={apiKeyPage.selectedAppId}
             createdApiKey={apiKeyPage.createdApiKey}
             formOpen={apiKeyPage.formOpen}
             busyAction={apiKeyPage.busyAction}
             setNewName={apiKeyPage.setNewName}
+            setRuntimeKey={setRuntimeKey}
+            setScopeType={apiKeyPage.setScopeType}
+            setSelectedAppId={apiKeyPage.setSelectedAppId}
             openCreateForm={apiKeyPage.openCreateForm}
             closeForm={apiKeyPage.closeForm}
             refreshApiKeys={apiKeyPage.refreshApiKeys}
@@ -498,17 +506,7 @@ export default function App() {
             revokeApiKey={apiKeyPage.revokeApiKey}
           />
         ) : view === "org" ? (
-          <OrgOpsPage
-            tenants={orgOpsPage.tenants}
-            workspaces={orgOpsPage.workspaces}
-            apiKeys={orgOpsPage.apiKeys}
-            usage={orgOpsPage.usage}
-            auditEvents={orgOpsPage.auditEvents}
-            session={authSession}
-            loading={orgOpsPage.loading}
-            error={orgOpsPage.error}
-            refreshOrg={orgOpsPage.refreshOrg}
-          />
+          <OrgOpsPage {...orgOpsPage} session={authSession} />
         ) : (
           <DesignerPage
             selectedApp={selectedApp}

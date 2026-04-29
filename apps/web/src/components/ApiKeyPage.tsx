@@ -1,5 +1,5 @@
-import { AlertCircle, ClipboardCheck, Code2, Loader2, Plus, RefreshCw, ShieldCheck, X } from "lucide-react";
-import type { ApiKeyRecord, AuthSession } from "../types";
+import { AlertCircle, ClipboardCheck, Code2, Loader2, Plus, RefreshCw, X } from "lucide-react";
+import type { ApiKeyRecord, AppRecord, AuthSession } from "../types";
 import { ActionBar, CopyButton, Drawer, EntityList, EntityRow, Field, StatePanel } from "./ui";
 
 export function ApiKeyPage(props: {
@@ -7,11 +7,18 @@ export function ApiKeyPage(props: {
   loading: boolean;
   error: string;
   session: AuthSession;
+  apps: AppRecord[];
+  runtimeKey: string;
   newName: string;
+  scopeType: "workspace" | "app";
+  selectedAppId: string;
   createdApiKey: string;
   formOpen: boolean;
   busyAction: string;
   setNewName: (value: string) => void;
+  setRuntimeKey: (value: string) => void;
+  setScopeType: (value: "workspace" | "app") => void;
+  setSelectedAppId: (value: string) => void;
   openCreateForm: () => void;
   closeForm: () => void;
   refreshApiKeys: () => Promise<void>;
@@ -19,6 +26,8 @@ export function ApiKeyPage(props: {
   revokeApiKey: (key: ApiKeyRecord) => Promise<void>;
 }) {
   const activeKeys = props.apiKeys.filter((key) => key.status === "active").length;
+  const runtimePrefix = props.runtimeKey ? props.runtimeKey.slice(0, 10) : "";
+  const matchedRuntimeKey = runtimePrefix ? props.apiKeys.find((key) => key.keyPrefix === runtimePrefix) : undefined;
   return (
     <section className="workspacePane apiKeyPane">
       <div className="pageHeader">
@@ -42,22 +51,7 @@ export function ApiKeyPage(props: {
           <button onClick={() => void props.refreshApiKeys()}>重试</button>
         </div>
       )}
-      <div className="apiKeyGrid">
-        <section className="designCard">
-          <div className="sectionTitle">
-            <ShieldCheck size={18} />
-            <div><h2>创建结果</h2><p>明文只在创建后显示一次，后续只能吊销后重建。</p></div>
-          </div>
-          {props.createdApiKey && (
-            <div className="keySecretBox">
-              <strong>新 Key</strong>
-              <code>{props.createdApiKey}</code>
-              <CopyButton text={props.createdApiKey} />
-            </div>
-          )}
-          {!props.createdApiKey && <StatePanel title="暂无新 Key" text="点击右上角创建 Key，生成后的明文会在这里显示一次。" />}
-        </section>
-        <section className="designCard apiKeySummary">
+      <section className="designCard apiKeySummary">
           <div className="sectionTitle">
             <Code2 size={18} />
             <div><h2>凭据概览</h2><p>外部系统通过 Bearer Key 调用 `/v1/**`。</p></div>
@@ -65,10 +59,15 @@ export function ApiKeyPage(props: {
           <div className="orgKpiGrid compact">
             <article><span>全部 Key</span><strong>{props.apiKeys.length}</strong><p>当前可见范围</p></article>
             <article><span>Active</span><strong>{activeKeys}</strong><p>可继续调用</p></article>
-            <article><span>Revoked</span><strong>{props.apiKeys.filter((key) => key.status !== "active").length}</strong><p>已停用</p></article>
+            <article><span>体验 Key</span><strong>{runtimePrefix || "未设置"}</strong><p>{matchedRuntimeKey ? `${matchedRuntimeKey.name} · ${matchedRuntimeKey.status}` : "创建成功后自动填入"}</p></article>
           </div>
-        </section>
-      </div>
+          <div className="runtimeKeyEditor">
+            <Field label="当前体验 Key 明文">
+              <input type="password" value={props.runtimeKey} onChange={(event) => props.setRuntimeKey(event.target.value)} placeholder="sk_..." />
+            </Field>
+            <p className="mutedText">Key 列表只显示前缀，不能用于调用；体验页会使用这里的完整 Bearer Key。</p>
+          </div>
+      </section>
       <section className="designCard">
         <div className="sectionTitle">
           <ClipboardCheck size={18} />
@@ -82,7 +81,7 @@ export function ApiKeyPage(props: {
               subtitle={`${key.keyPrefix}*** · ${key.appId ? "应用级" : "空间级"} · ${key.id}`}
               status={key.status}
               statusTone={key.status === "active" ? "success" : "cancelled"}
-              meta={`${key.appId || key.workspaceId || props.session.workspaceId} · last used: ${formatDate(key.lastUsedAt)}`}
+              meta={`${key.appId ? `仅 ${key.appId}` : `空间 ${key.workspaceId || props.session.workspaceId}`} · last used: ${formatDate(key.lastUsedAt)}`}
               actions={
                 <button className="dangerTextBtn" disabled={key.status !== "active" || props.busyAction === `api-key-revoke-${key.id}`} onClick={() => void props.revokeApiKey(key)}>
                   {props.busyAction === `api-key-revoke-${key.id}` ? <Loader2 className="spin" size={14} /> : <X size={14} />} 吊销
@@ -95,22 +94,55 @@ export function ApiKeyPage(props: {
       </section>
       <Drawer
         open={props.formOpen}
-        title="创建 Workspace Key"
-        description="新 Key 明文只显示一次，请创建后立即保存到调用方系统。"
+        title="创建 Runtime API Key"
+        description="选择 Key 的可访问范围。明文只显示一次，创建成功后会自动设为体验 Key。"
         onClose={props.closeForm}
         footer={
           <ActionBar>
-            <button className="ghostBtn" onClick={props.closeForm}>取消</button>
-            <button className="primaryBtn" disabled={props.busyAction === "api-key-create"} onClick={() => void props.createApiKey()}>
-              {props.busyAction === "api-key-create" ? <Loader2 className="spin" size={16} /> : <Plus size={16} />} 创建
-            </button>
+            <button className="ghostBtn" onClick={props.closeForm}>{props.createdApiKey ? "完成" : "取消"}</button>
+            {!props.createdApiKey && (
+              <button className="primaryBtn" disabled={props.busyAction === "api-key-create"} onClick={() => void props.createApiKey()}>
+                {props.busyAction === "api-key-create" ? <Loader2 className="spin" size={16} /> : <Plus size={16} />} 创建
+              </button>
+            )}
           </ActionBar>
         }
       >
-        <Field label="Key 名称">
-          <input value={props.newName} onChange={(event) => props.setNewName(event.target.value)} placeholder="例如 Production Runtime Key" autoFocus />
-        </Field>
-        <p className="mutedText">Scope：{props.session.tenantId} / {props.session.workspaceId}</p>
+        {props.createdApiKey ? (
+          <div className="keyCreatedPanel">
+            <div className="keySecretBox">
+              <strong>新 Key</strong>
+              <code>{props.createdApiKey}</code>
+              <CopyButton text={props.createdApiKey} />
+            </div>
+            <p className="mutedText">明文只显示这一次。关闭侧边栏后，只能看到 Key 前缀和状态。</p>
+          </div>
+        ) : (
+          <>
+            <Field label="Key 名称">
+              <input value={props.newName} onChange={(event) => props.setNewName(event.target.value)} placeholder="例如 Production Runtime Key" autoFocus />
+            </Field>
+            <div className="radioGrid compact">
+              <label className={`radioCard ${props.scopeType === "workspace" ? "active" : ""}`}>
+                <input type="radio" name="api-key-scope" checked={props.scopeType === "workspace"} onChange={() => props.setScopeType("workspace")} />
+                <span><strong>Workspace Key</strong><small>可访问当前工作空间下全部已发布应用。</small></span>
+              </label>
+              <label className={`radioCard ${props.scopeType === "app" ? "active" : ""}`}>
+                <input type="radio" name="api-key-scope" checked={props.scopeType === "app"} onChange={() => props.setScopeType("app")} />
+                <span><strong>App Key</strong><small>只允许访问一个指定应用。</small></span>
+              </label>
+            </div>
+            {props.scopeType === "app" && (
+              <Field label="允许访问的应用">
+                <select value={props.selectedAppId} onChange={(event) => props.setSelectedAppId(event.target.value)}>
+                  <option value="">请选择应用</option>
+                  {props.apps.map((app) => <option key={app.id} value={app.id}>{app.name} · {app.type} · {app.id}</option>)}
+                </select>
+              </Field>
+            )}
+            <p className="mutedText">Tenant：{props.session.tenantId} / Workspace：{props.session.workspaceId}</p>
+          </>
+        )}
       </Drawer>
     </section>
   );

@@ -22,6 +22,12 @@ public class ApiExceptionHandler {
         .body(new ApiError("bad_request", exception.getMessage()));
   }
 
+  @ExceptionHandler(SecurityException.class)
+  public ResponseEntity<ApiError> forbidden(SecurityException exception) {
+    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+        .body(new ApiError("forbidden", exception.getMessage()));
+  }
+
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public ResponseEntity<ApiError> validation(MethodArgumentNotValidException exception) {
     String message = exception.getBindingResult().getFieldErrors().stream()

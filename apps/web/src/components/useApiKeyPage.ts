@@ -22,6 +22,8 @@ export function useApiKeyPage({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [newName, setNewName] = useState("Workspace Runtime Key");
+  const [scopeType, setScopeType] = useState<"workspace" | "app">("workspace");
+  const [selectedAppId, setSelectedAppId] = useState("");
   const [createdApiKey, setCreatedApiKey] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [busyAction, setBusyAction] = useState("");
@@ -48,6 +50,10 @@ export function useApiKeyPage({
       setStatus("请先填写 Key 名称");
       return;
     }
+    if (scopeType === "app" && !selectedAppId) {
+      setStatus("请选择该 Key 允许访问的应用");
+      return;
+    }
     setBusyAction("api-key-create");
     setCreatedApiKey("");
     try {
@@ -56,12 +62,12 @@ export function useApiKeyPage({
         body: JSON.stringify({
           name: newName.trim(),
           workspaceId,
+          appId: scopeType === "app" ? selectedAppId : undefined,
         }),
       });
       setCreatedApiKey(key.apiKey);
       setRuntimeKey(key.apiKey);
-      setFormOpen(false);
-      setStatus("Workspace API Key 已创建，明文仅显示一次");
+      setStatus(scopeType === "app" ? "App API Key 已创建，已设为体验 Key" : "Workspace API Key 已创建，已设为体验 Key");
       await refreshApiKeys();
     } catch (nextError) {
       setStatus(nextError instanceof Error ? nextError.message : "API Key 创建失败");
@@ -97,11 +103,20 @@ export function useApiKeyPage({
     loading,
     error,
     newName,
+    scopeType,
+    selectedAppId,
     createdApiKey,
     formOpen,
     busyAction,
     setNewName,
-    openCreateForm: () => setFormOpen(true),
+    setScopeType,
+    setSelectedAppId,
+    openCreateForm: () => {
+      setCreatedApiKey("");
+      setScopeType("workspace");
+      setSelectedAppId("");
+      setFormOpen(true);
+    },
     closeForm: () => setFormOpen(false),
     refreshApiKeys,
     createApiKey,
