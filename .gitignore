@@ -1,0 +1,44 @@
+.DS_Store
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.local
+*.secret
+*.secrets
+*secret*
+*credential*
+*credentials*
+
+# Private keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.csr
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+
+# Logs and runtime output
+*.log
+logs/
+tmp/
+temp/
+
+# Dependencies and build output
+node_modules/
+dist/
+build/
+target/
+.next/
+.nuxt/
+coverage/
+
+# IDE and OS files
+.idea/
+.vscode/
