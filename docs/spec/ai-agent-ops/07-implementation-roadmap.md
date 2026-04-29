@@ -370,6 +370,41 @@
 8. 发布检查抽屉展示阻断错误、警告、建议统计，并按 severity 展示 code、标题、详情和 target。
 9. 前端构建、后端测试和编辑器诊断均已通过。
 
+### 13.5 P3 知识库管理落地记录
+
+2026-04-29 已完成 P3 第一轮：
+
+1. 新增控制台知识库路由：`#/knowledge`。
+2. 知识库页面支持数据集列表、创建数据集、选择数据集和刷新。
+3. 支持向数据集写入文本文档，并在轻量运行时内同步生成 chunk 索引。
+4. 文档列表展示文档 ID、来源类型、索引状态和更新时间。
+5. 检索测试支持输入 query、调用 `POST /api/aio/admin/datasets/{datasetId}/retrieve-test` 并展示 score、片段和来源。
+6. 知识库页面补齐空状态、错误态、加载态和可重复刷新操作。
+
+### 13.6 P6 Human-in-the-loop 落地记录
+
+2026-04-29 已完成 P6 第一轮：
+
+1. 新增后台任务中心接口：`GET /api/aio/admin/wait-tasks`。
+2. 支持按等待任务状态筛选：`pending`、`submitted`、`rejected`、`cancelled`、`expired`。
+3. 新增后台等待任务详情接口：`GET /api/aio/admin/wait-tasks/{waitTaskId}`。
+4. 新增控制台提交等待任务接口：`POST /api/aio/admin/wait-tasks/{waitTaskId}/submit`。
+5. 控制台提交等待任务会生成幂等键，并复用运行时恢复逻辑继续执行 Workflow。
+6. 新增任务中心路由：`#/tasks`，展示任务总数、待处理数、状态筛选、上下文和处理按钮。
+7. pending 任务支持“确认继续”和“拒绝”，提交后同步刷新任务列表和运行观测。
+
+### 13.7 P7 SaaS 运营能力落地记录
+
+2026-04-29 已完成 P7 第一轮：
+
+1. 新增用量摘要接口：`GET /api/aio/admin/usage-summary`。
+2. 用量摘要覆盖应用数、已发布应用数、知识库数、文档数、API Key 数、Run 数、失败 Run、等待 Run、等待任务、Token 和平均耗时。
+3. 新增审计摘要接口：`GET /api/aio/admin/audit-events`。
+4. 审计摘要覆盖应用发布、API Key 创建和知识文档索引等关键事件。
+5. 新增组织与用量路由：`#/org`。
+6. 组织与用量页面展示租户、空间、API Key scope、用量统计和审计事件。
+7. 主界面已清理未接入的“应用广场”“MCP 广场”“MCP 管理”等无用占位入口，仅保留当前可用的应用管理、知识库、任务中心、运行观测、组织与用量。
+
 ## 14. 每阶段交付要求
 
 每个阶段完成时必须同时交付：

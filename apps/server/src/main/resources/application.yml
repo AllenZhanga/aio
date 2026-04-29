@@ -37,3 +37,7 @@ aio:
   stdio-mcp-enabled: ${ENABLE_STDIO_MCP:false}
   code-node-enabled: ${ENABLE_CODE_NODE:false}
   secret-key: ${AIO_SECRET_KEY:dev-only-change-me}
+  console-username: ${AIO_CONSOLE_USERNAME:admin}
+  console-password: ${AIO_CONSOLE_PASSWORD:admin}
+  console-accounts: ${AIO_CONSOLE_ACCOUNTS:}
+  console-session-ttl-seconds: ${AIO_CONSOLE_SESSION_TTL_SECONDS:28800}

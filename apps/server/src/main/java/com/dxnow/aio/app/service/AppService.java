@@ -7,6 +7,7 @@ import com.dxnow.aio.app.repository.AiAppVersionRepository;
 import com.dxnow.aio.common.Ids;
 import com.dxnow.aio.identity.repository.WorkspaceRepository;
 import java.util.List;
+import java.util.stream.Collectors;
 import javax.persistence.EntityNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,7 +32,9 @@ public class AppService {
   }
 
   public List<AiApp> list(String tenantId, String workspaceId) {
-    return appRepository.findByTenantIdAndWorkspaceIdOrderByCreatedAtDesc(tenantId, workspaceId);
+    return appRepository.findByTenantIdAndWorkspaceIdOrderByCreatedAtDesc(tenantId, workspaceId).stream()
+        .filter(app -> !"archived".equals(app.getStatus()))
+        .collect(Collectors.toList());
   }
 
   @Transactional

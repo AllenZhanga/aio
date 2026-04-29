@@ -3,6 +3,8 @@ package com.dxnow.aio.knowledge.api;
 import com.dxnow.aio.knowledge.domain.KbDataset;
 import com.dxnow.aio.knowledge.domain.KbDocument;
 import com.dxnow.aio.knowledge.service.KnowledgeService;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -16,8 +18,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/aio/admin")
@@ -56,6 +60,18 @@ public class AdminKnowledgeController {
       @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
       @PathVariable String datasetId,
       @Valid @RequestBody DocumentRequest request) {
+    return DocumentResponse.from(knowledgeService.addDocument(tenantId, datasetId, request.toMutation()));
+  }
+
+  @PostMapping("/datasets/{datasetId}/documents/upload")
+  public DocumentResponse uploadDocument(
+      @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
+      @PathVariable String datasetId,
+      @RequestParam("file") MultipartFile file) throws IOException {
+    DocumentRequest request = new DocumentRequest();
+    request.name = file.getOriginalFilename() == null || file.getOriginalFilename().isBlank() ? "Uploaded Document" : file.getOriginalFilename();
+    request.sourceType = detectSourceType(request.name);
+    request.text = new String(file.getBytes(), StandardCharsets.UTF_8);
     return DocumentResponse.from(knowledgeService.addDocument(tenantId, datasetId, request.toMutation()));
   }
 
@@ -119,6 +135,14 @@ public class AdminKnowledgeController {
     public String query;
     public int topK = 5;
     public double scoreThreshold = 0.0;
+  }
+
+  private static String detectSourceType(String name) {
+    String lower = name == null ? "" : name.toLowerCase();
+    if (lower.endsWith(".md")) return "markdown";
+    if (lower.endsWith(".csv")) return "csv";
+    if (lower.endsWith(".json")) return "json";
+    return "file";
   }
 
   public static class DatasetResponse {

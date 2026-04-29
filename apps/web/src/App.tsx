@@ -2,15 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowLeft,
+  Building2,
   Bot,
   Boxes,
-  ChevronDown,
+  ClipboardCheck,
   Code2,
+  Database,
   FileText,
-  Grid3X3,
-  Layers3,
   Loader2,
-  MessageSquareText,
   MousePointer2,
   PanelRight,
   Play,
@@ -20,7 +19,10 @@ import {
   Save,
   Search,
   Settings2,
+  ShieldCheck,
   Sparkles,
+  Trash2,
+  UploadCloud,
   Workflow,
   X,
   Zap
@@ -28,9 +30,9 @@ import {
 import "./app-center.css";
 
 type AppKind = "agent" | "workflow";
-type AgentMode = "chat-assistant" | "agent" | "text-generation";
-type CenterView = "center" | "designer" | "api" | "observability";
-type RouteState = { view: "center" } | { view: "designer"; appId: string } | { view: "api"; appId: string } | { view: "observability"; appId?: string };
+type AgentMode = "agent";
+type CenterView = "center" | "designer" | "experience" | "api" | "observability" | "knowledge" | "tasks" | "providers" | "org";
+type RouteState = { view: "center" } | { view: "designer"; appId: string } | { view: "experience"; appId: string } | { view: "api"; appId: string } | { view: "observability"; appId?: string } | { view: "knowledge" } | { view: "tasks" } | { view: "providers" } | { view: "org" };
 type AppRecord = {
   id: string;
   name: string;
@@ -94,17 +96,32 @@ type ValidationReport = {
   suggestions: number;
   issues: ValidationIssue[];
 };
+type DatasetRecord = { id: string; name: string; description?: string; status: string; embeddingModel?: string; chunkStrategy?: string; createdAt?: string; updatedAt?: string };
+type DocumentRecord = { id: string; datasetId: string; name: string; sourceType: string; parseStatus: string; indexStatus: string; errorMessage?: string; createdAt?: string; updatedAt?: string };
+type RetrieveRecord = { chunk_id: string; document_id: string; content: string; score: number; metadata?: string };
+type WaitTaskRecord = { id: string; appId: string; appName: string; appType: string; runId: string; nodeId: string; nodeType: string; title?: string; description?: string; status: string; actions?: unknown; context?: Record<string, unknown>; submitResult?: Record<string, unknown>; expiresAt?: string; submittedAt?: string; createdAt?: string; updatedAt?: string };
+type TenantRecord = { id: string; name: string; code: string; plan: string; status: string; createdAt?: string };
+type WorkspaceRecord = { id: string; tenantId: string; name: string; status: string; createdAt?: string };
+type ApiKeyRecord = { id: string; name: string; keyPrefix: string; status: string; workspaceId?: string; appId?: string; expiresAt?: string; createdAt?: string };
+type UsageSummary = { applications: number; publishedApps: number; datasets: number; documents: number; apiKeys: number; runs: number; failedRuns: number; waitingRuns: number; waitTasks: number; pendingWaitTasks: number; totalTokens: number; averageLatencyMs: number };
+type AuditEvent = { id: string; type: string; title: string; detail: string; actor: string; target: string; createdAt?: string };
+type ProviderRecord = { id: string; tenantId: string; workspaceId?: string; name: string; providerType: string; baseUrl: string; hasApiKey: boolean; defaultChatModel?: string; defaultEmbeddingModel?: string; configJson?: string; status: string; createdAt?: string; updatedAt?: string };
+type ProviderForm = { name: string; providerType: string; baseUrl: string; apiKey: string; defaultChatModel: string; defaultEmbeddingModel: string; configJson: string };
+type AuthSession = { token: string; userId: string; displayName?: string; role?: string; tenantId: string; workspaceId: string; expiresAt: number };
+type RuntimeWaitTask = { id: string; run_id: string; status: string; type?: string; title?: string; description?: string; actions?: unknown; context?: Record<string, unknown>; expires_at?: string };
+type RuntimeResponse = { run_id: string; status: string; answer?: string; outputs?: Record<string, unknown>; wait_task?: RuntimeWaitTask };
+type WaitSubmitResponse = { wait_task_id: string; run_id: string; wait_task_status: string; run_status: string; next_wait_task?: RuntimeWaitTask };
+type RuntimeRunResponse = { run_id: string; status: string; current_wait_task_id?: string; outputs?: Record<string, unknown> };
+type ExperienceMessage = { id: string; role: "user" | "assistant" | "system" | "wait"; text: string; meta?: string; waitTask?: RuntimeWaitTask };
 
-const adminHeaders = {
+const baseAdminHeaders = {
   "Content-Type": "application/json",
   "X-Aio-Tenant": "default",
   "X-Aio-Workspace": "default"
 };
 
-const agentModes: Array<{ mode: AgentMode; title: string; typeLabel: string; description: string; icon: typeof MessageSquareText }> = [
-  { mode: "chat-assistant", title: "Chatflow", typeLabel: "聊天助手", description: "适合客服、知识问答、多轮对话。", icon: MessageSquareText },
-  { mode: "agent", title: "Agent", typeLabel: "智能体", description: "适合自主规划、工具调用、任务执行。", icon: Bot },
-  { mode: "text-generation", title: "文本生成", typeLabel: "文本生成", description: "适合结构化写作、总结、模板生成。", icon: FileText }
+const agentModes: Array<{ mode: AgentMode; title: string; typeLabel: string; description: string; icon: typeof Bot }> = [
+  { mode: "agent", title: "Agent", typeLabel: "智能体", description: "适合自主规划、工具调用、知识问答和任务执行。", icon: Bot }
 ];
 
 const nodeMeta: Record<WorkflowNodeType, { name: string; description: string; accent: string }> = {
@@ -142,8 +159,8 @@ const defaultEdges: WorkflowEdge[] = [
 ];
 
 const defaultAgentDraft: AgentDraft = {
-  mode: "chat-assistant",
-  model: "test-local-fallback",
+  mode: "agent",
+  model: "",
   system: "你是企业内部知识助手，回答要简洁、准确、可执行。",
   temperature: 0.3,
   opening: "你好，我可以帮你处理知识问答、售后咨询和流程指引。",
@@ -168,7 +185,7 @@ export default function App() {
   const [runResult, setRunResult] = useState<Record<string, unknown> | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createType, setCreateType] = useState<AppKind>("agent");
-  const [createMode, setCreateMode] = useState<AgentMode>("chat-assistant");
+  const [createMode, setCreateMode] = useState<AgentMode>("agent");
   const [createName, setCreateName] = useState("");
   const [agentDraft, setAgentDraft] = useState<AgentDraft>(defaultAgentDraft);
   const [nodes, setNodes] = useState<WorkflowNode[]>(defaultNodes);
@@ -185,6 +202,40 @@ export default function App() {
   const [runsError, setRunsError] = useState("");
   const [validationReport, setValidationReport] = useState<ValidationReport | null>(null);
   const [releasePanelOpen, setReleasePanelOpen] = useState(false);
+  const [datasets, setDatasets] = useState<DatasetRecord[]>([]);
+  const [selectedDatasetId, setSelectedDatasetId] = useState("");
+  const [documents, setDocuments] = useState<DocumentRecord[]>([]);
+  const [retrieveQuery, setRetrieveQuery] = useState("退款政策");
+  const [retrieveRecords, setRetrieveRecords] = useState<RetrieveRecord[]>([]);
+  const [knowledgeLoading, setKnowledgeLoading] = useState(false);
+  const [knowledgeError, setKnowledgeError] = useState("");
+  const [newDatasetName, setNewDatasetName] = useState("企业知识库");
+  const [newDocumentText, setNewDocumentText] = useState("退款政策：客户可在 7 天内申请退款。请先核验订单状态，再确认处理方案。");
+  const [knowledgeFile, setKnowledgeFile] = useState<File | null>(null);
+  const [waitTasks, setWaitTasks] = useState<WaitTaskRecord[]>([]);
+  const [waitTaskFilter, setWaitTaskFilter] = useState("all");
+  const [waitTasksLoading, setWaitTasksLoading] = useState(false);
+  const [waitTasksError, setWaitTasksError] = useState("");
+  const [tenants, setTenants] = useState<TenantRecord[]>([]);
+  const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([]);
+  const [apiKeys, setApiKeys] = useState<ApiKeyRecord[]>([]);
+  const [usageSummary, setUsageSummary] = useState<UsageSummary | null>(null);
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
+  const [orgLoading, setOrgLoading] = useState(false);
+  const [orgError, setOrgError] = useState("");
+  const [providers, setProviders] = useState<ProviderRecord[]>([]);
+  const [providersLoading, setProvidersLoading] = useState(false);
+  const [providersError, setProvidersError] = useState("");
+  const [providerForm, setProviderForm] = useState<ProviderForm>({ name: "OpenAI Compatible", providerType: "openai_compatible", baseUrl: "https://api.openai.com/v1", apiKey: "", defaultChatModel: "gpt-4o-mini", defaultEmbeddingModel: "text-embedding-3-small", configJson: "{}" });
+  const [authSession, setAuthSession] = useState<AuthSession | null>(() => readStoredConsoleSession());
+  const [loginUsername, setLoginUsername] = useState("admin");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const [experienceMessages, setExperienceMessages] = useState<ExperienceMessage[]>([]);
+  const [experienceInput, setExperienceInput] = useState("请帮我处理一个退款咨询");
+  const [experienceFeedback, setExperienceFeedback] = useState("确认继续");
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
   const selectedApp = useMemo(() => apps.find((item) => item.id === selectedAppId), [apps, selectedAppId]);
@@ -193,6 +244,10 @@ export default function App() {
   const selectedRun = useMemo(() => runs.find((item) => item.runId === selectedRunId), [runs, selectedRunId]);
   const workflowDefinition = useMemo(() => buildWorkflowDefinition(nodes, edges), [nodes, edges]);
   const visibleApps = useMemo(() => apps.filter((app) => (filter === "all" || app.type === filter) && (!query || app.name.toLowerCase().includes(query.toLowerCase()) || app.id.includes(query))), [apps, filter, query]);
+  const modelOptions = useMemo(() => {
+    const values = providers.flatMap((provider) => [provider.defaultChatModel, provider.defaultEmbeddingModel]).filter((value): value is string => !!value && !!value.trim());
+    return Array.from(new Set(values.length ? values : [""]));
+  }, [providers]);
 
   useEffect(() => {
     const applyRoute = () => {
@@ -200,8 +255,14 @@ export default function App() {
       if (route.view === "designer" || route.view === "api") {
         setSelectedAppId(route.appId);
         setView(route.view);
+      } else if (route.view === "experience") {
+        setSelectedAppId(route.appId);
+        setView(route.view);
       } else if (route.view === "observability") {
         setSelectedAppId(route.appId || "");
+        setView(route.view);
+      } else if (route.view === "knowledge" || route.view === "tasks" || route.view === "providers" || route.view === "org") {
+        setSelectedAppId("");
         setView(route.view);
       } else {
         setSelectedAppId("");
@@ -212,19 +273,103 @@ export default function App() {
     window.addEventListener("hashchange", applyRoute);
     return () => window.removeEventListener("hashchange", applyRoute);
   }, []);
-  useEffect(() => { void refreshApps(); }, []);
-  useEffect(() => { if (selectedApp) void loadAppDefinition(selectedApp); }, [selectedApp?.id]);
+  useEffect(() => { if (authSession) { void refreshApps(); void refreshProviders(); void refreshWorkspaceOptions(); } else setAppsLoading(false); }, [authSession?.token]);
+  useEffect(() => { if (authSession && selectedApp) void loadAppDefinition(selectedApp); }, [authSession?.token, selectedApp?.id]);
   useEffect(() => { if (runtimeKey) localStorage.setItem("aio.runtimeKey", runtimeKey); }, [runtimeKey]);
-  useEffect(() => { if (view === "observability") void refreshRuns(selectedAppId || undefined); }, [view, selectedAppId]);
-  useEffect(() => { if (view === "observability" && selectedRunId) void loadRunTraces(selectedRunId); }, [view, selectedRunId]);
+  useEffect(() => { if (authSession && view === "observability") void refreshRuns(selectedAppId || undefined); }, [authSession?.token, view, selectedAppId]);
+  useEffect(() => { if (authSession && view === "observability" && selectedRunId) void loadRunTraces(selectedRunId); }, [authSession?.token, view, selectedRunId]);
+  useEffect(() => { if (authSession && view === "knowledge") void refreshKnowledge(); }, [authSession?.token, view]);
+  useEffect(() => { if (authSession && view === "tasks") void refreshWaitTasks(); }, [authSession?.token, view, waitTaskFilter]);
+  useEffect(() => { if (authSession && view === "providers") void refreshProviders(); }, [authSession?.token, view]);
+  useEffect(() => { if (authSession && view === "org") void refreshOrgOps(); }, [authSession?.token, view]);
 
   async function call<T>(path: string, init: RequestInit = {}, runtime = false): Promise<T> {
-    const headers = runtime ? { "Content-Type": "application/json", Authorization: `Bearer ${runtimeKey}` } : adminHeaders;
+    const headers = runtime ? { "Content-Type": "application/json", Authorization: `Bearer ${runtimeKey}` } : { ...baseAdminHeaders, Authorization: `Bearer ${authSession?.token || ""}`, "X-Aio-Tenant": authSession?.tenantId || "default", "X-Aio-Workspace": authSession?.workspaceId || "default" };
     const response = await fetch(path, { ...init, headers: { ...headers, ...(init.headers || {}) } });
     const text = await response.text();
     const body = text ? safeJsonParse(text) : null;
+    if (!runtime && response.status === 401) {
+      clearStoredConsoleSession();
+      setAuthSession(null);
+      throw new Error("登录已过期，请重新登录");
+    }
     if (!response.ok) throw new Error(body?.message || body?.error || response.statusText);
     return body as T;
+  }
+
+  async function uploadForm<T>(path: string, formData: FormData): Promise<T> {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${authSession?.token || ""}`, "X-Aio-Tenant": authSession?.tenantId || "default", "X-Aio-Workspace": authSession?.workspaceId || "default" },
+      body: formData
+    });
+    const text = await response.text();
+    const body = text ? safeJsonParse(text) : null;
+    if (response.status === 401) {
+      clearStoredConsoleSession();
+      setAuthSession(null);
+      throw new Error("登录已过期，请重新登录");
+    }
+    if (!response.ok) throw new Error(body?.message || body?.error || response.statusText);
+    return body as T;
+  }
+
+  async function loginConsole() {
+    setBusyAction("login");
+    setLoginError("");
+    try {
+      const response = await fetch("/api/aio/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: loginUsername.trim(), password: loginPassword })
+      });
+      const text = await response.text();
+      const body = text ? safeJsonParse(text) : null;
+      if (!response.ok) throw new Error(body?.message || "用户名或密码错误");
+      const session = body as AuthSession;
+      localStorage.setItem("aio.consoleSession", JSON.stringify(session));
+      setAuthSession(session);
+      setLoginPassword("");
+      setStatus("控制台已登录");
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : "登录失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  function logoutConsole() {
+    clearStoredConsoleSession();
+    setAuthSession(null);
+    setApps([]);
+    setSelectedAppId("");
+    setStatus("已退出登录");
+  }
+
+  async function switchWorkspace(workspaceId: string) {
+    if (!authSession || workspaceId === authSession.workspaceId) return;
+    setBusyAction("switch-workspace");
+    try {
+      const response = await fetch("/api/aio/auth/switch-workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authSession.token}` },
+        body: JSON.stringify({ workspaceId })
+      });
+      const text = await response.text();
+      const body = text ? safeJsonParse(text) : null;
+      if (!response.ok) throw new Error(body?.message || "工作空间切换失败");
+      const session = body as AuthSession;
+      localStorage.setItem("aio.consoleSession", JSON.stringify(session));
+      setAuthSession(session);
+      setSelectedAppId("");
+      setExperienceMessages([]);
+      setStatus(`已切换到工作空间 ${session.workspaceId}`);
+      navigateCenter();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "工作空间切换失败");
+    } finally {
+      setBusyAction("");
+    }
   }
 
   async function refreshApps() {
@@ -257,7 +402,7 @@ export default function App() {
         setAgentDraft({
           ...defaultAgentDraft,
           mode: normalizeAgentMode(definition.agentMode),
-          model: definition.model?.chatModel || "test-local-fallback",
+          model: definition.model?.chatModel || "",
           system: definition.prompt?.system || defaultAgentDraft.system,
           temperature: Number(definition.model?.temperature ?? 0.3),
           opening: definition.ui?.opening || defaultAgentDraft.opening,
@@ -279,7 +424,7 @@ export default function App() {
     }
   }
 
-  function openCreateModal(type: AppKind, mode: AgentMode = "chat-assistant") {
+  function openCreateModal(type: AppKind, mode: AgentMode = "agent") {
     setCreateType(type);
     setCreateMode(mode);
     setCreateName(type === "workflow" ? `Workflow 应用 ${apps.filter((item) => item.type === "workflow").length + 1}` : `${agentModes.find((item) => item.mode === mode)?.typeLabel || "Agent"}应用 ${apps.filter((item) => item.type === "agent").length + 1}`);
@@ -356,11 +501,26 @@ export default function App() {
     setBusyAction("key");
     try {
       if (!selectedApp) throw new Error("请先选择应用");
-      const key = await call<{ apiKey: string }>("/api/aio/admin/api-keys", { method: "POST", body: JSON.stringify({ name: `${selectedApp.name} runtime`, workspaceId: "default", appId: selectedApp.id }) });
+      const key = await call<{ apiKey: string }>("/api/aio/admin/api-keys", { method: "POST", body: JSON.stringify({ name: `${selectedApp.name} runtime`, workspaceId: authSession?.workspaceId || "default", appId: selectedApp.id }) });
       setRuntimeKey(key.apiKey);
       setStatus("Runtime API Key 已生成");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "API Key 创建失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function archiveApp(app: AppRecord) {
+    if (!window.confirm(`确认删除（归档）应用「${app.name}」？归档后会从当前应用列表移除，历史版本和运行记录仍保留。`)) return;
+    setBusyAction(`archive-${app.id}`);
+    try {
+      await call(`/api/aio/admin/apps/${app.id}/archive`, { method: "POST" });
+      setStatus(`已归档 ${app.name}`);
+      await refreshApps();
+      if (selectedAppId === app.id) backToCenter();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "应用归档失败");
     } finally {
       setBusyAction("");
     }
@@ -381,6 +541,82 @@ export default function App() {
     } finally {
       setBusyAction("");
     }
+  }
+
+  async function sendExperienceMessage() {
+    if (!selectedApp) return;
+    if (!runtimeKey) {
+      setStatus("请先为当前应用生成体验 Key");
+      return;
+    }
+    const prompt = experienceInput.trim();
+    if (!prompt) return;
+    const userMessage: ExperienceMessage = { id: `msg_${Date.now()}_user`, role: "user", text: prompt, meta: selectedApp.type === "workflow" ? "Workflow 输入" : "用户消息" };
+    setExperienceMessages((current) => [...current, userMessage]);
+    setExperienceInput("");
+    setBusyAction("experience-send");
+    try {
+      const path = selectedApp.type === "workflow" ? `/v1/apps/${selectedApp.id}/run` : `/v1/apps/${selectedApp.id}/chat`;
+      const body = selectedApp.type === "workflow"
+        ? { inputs: { question: prompt, operator_id: authSession?.userId || "console-user" }, response_mode: "blocking" }
+        : { query: prompt, stream: false };
+      const response = await call<RuntimeResponse>(path, { method: "POST", body: JSON.stringify(body) }, true);
+      appendRuntimeResponse(response, selectedApp.type);
+      setStatus(response.status === "waiting" ? "AI 应用正在等待用户反馈" : "AI 应用体验完成");
+    } catch (error) {
+      appendExperienceSystem(error instanceof Error ? error.message : "应用体验调用失败");
+      setStatus(error instanceof Error ? error.message : "应用体验调用失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function submitExperienceWait(waitTask: RuntimeWaitTask, action = "approve") {
+    if (!runtimeKey) {
+      setStatus("请先为当前应用生成体验 Key");
+      return;
+    }
+    setBusyAction(`experience-wait-${waitTask.id}`);
+    const comment = experienceFeedback.trim() || (action === "reject" ? "拒绝" : "确认继续");
+    setExperienceMessages((current) => [...current, { id: `msg_${Date.now()}_feedback`, role: "user", text: comment, meta: action === "reject" ? "用户拒绝" : "用户反馈" }]);
+    try {
+      const response = await call<WaitSubmitResponse>(`/v1/wait-tasks/${waitTask.id}/submit`, {
+        method: "POST",
+        headers: { "Idempotency-Key": `experience-${waitTask.id}-${Date.now()}` },
+        body: JSON.stringify({ action, comment, submitted_by: authSession?.userId || "console-user" })
+      }, true);
+      setExperienceMessages((current) => current.map((message) => message.waitTask?.id === waitTask.id ? { ...message, waitTask: { ...message.waitTask, status: response.wait_task_status } } : message));
+      if (response.next_wait_task) {
+        appendExperienceWait(response.next_wait_task);
+        setStatus("流程继续后再次等待用户反馈");
+      } else {
+        const run = await call<RuntimeRunResponse>(`/v1/runs/${response.run_id}`, {}, true);
+        setExperienceMessages((current) => [...current, { id: `msg_${Date.now()}_assistant`, role: "assistant", text: runtimeOutputText(run.outputs, run.status), meta: `run ${run.run_id} · ${run.status}` }]);
+        setStatus(`流程已${run.status === "success" ? "完成" : run.status}`);
+      }
+    } catch (error) {
+      appendExperienceSystem(error instanceof Error ? error.message : "用户反馈提交失败");
+      setStatus(error instanceof Error ? error.message : "用户反馈提交失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  function appendRuntimeResponse(response: RuntimeResponse, type: AppKind) {
+    if (response.status === "waiting" && response.wait_task) {
+      appendExperienceWait(response.wait_task);
+      return;
+    }
+    const text = type === "agent" ? (response.answer || runtimeOutputText(response.outputs, response.status)) : runtimeOutputText(response.outputs, response.status);
+    setExperienceMessages((current) => [...current, { id: `msg_${Date.now()}_assistant`, role: "assistant", text, meta: `run ${response.run_id} · ${response.status}` }]);
+  }
+
+  function appendExperienceWait(waitTask: RuntimeWaitTask) {
+    setExperienceMessages((current) => [...current, { id: `msg_${Date.now()}_wait`, role: "wait", text: waitTask.description || waitTask.title || "AI 应用需要你的反馈后继续。", meta: waitTask.title || "等待用户反馈", waitTask }]);
+  }
+
+  function appendExperienceSystem(text: string) {
+    setExperienceMessages((current) => [...current, { id: `msg_${Date.now()}_system`, role: "system", text }]);
   }
 
   async function refreshRuns(appId = selectedAppId || undefined) {
@@ -414,6 +650,234 @@ export default function App() {
     }
   }
 
+  async function refreshKnowledge() {
+    setKnowledgeLoading(true);
+    setKnowledgeError("");
+    try {
+      const nextDatasets = await call<DatasetRecord[]>("/api/aio/admin/datasets");
+      setDatasets(nextDatasets);
+      const nextDatasetId = selectedDatasetId && nextDatasets.some((dataset) => dataset.id === selectedDatasetId) ? selectedDatasetId : nextDatasets[0]?.id || "";
+      setSelectedDatasetId(nextDatasetId);
+      if (nextDatasetId) {
+        const nextDocuments = await call<DocumentRecord[]>(`/api/aio/admin/datasets/${nextDatasetId}/documents`);
+        setDocuments(nextDocuments);
+      } else {
+        setDocuments([]);
+        setRetrieveRecords([]);
+      }
+      setStatus("知识库已同步");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "知识库加载失败";
+      setKnowledgeError(message);
+      setStatus(message);
+    } finally {
+      setKnowledgeLoading(false);
+    }
+  }
+
+  async function selectDataset(datasetId: string) {
+    setSelectedDatasetId(datasetId);
+    setKnowledgeLoading(true);
+    setKnowledgeError("");
+    try {
+      const nextDocuments = await call<DocumentRecord[]>(`/api/aio/admin/datasets/${datasetId}/documents`);
+      setDocuments(nextDocuments);
+      setRetrieveRecords([]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "文档加载失败";
+      setKnowledgeError(message);
+      setStatus(message);
+    } finally {
+      setKnowledgeLoading(false);
+    }
+  }
+
+  async function createDataset() {
+    setBusyAction("dataset");
+    try {
+      const created = await call<DatasetRecord>("/api/aio/admin/datasets", { method: "POST", body: JSON.stringify({ name: newDatasetName, description: "控制台创建的数据集", chunkStrategy: "fixed" }) });
+      setSelectedDatasetId(created.id);
+      setStatus(`已创建知识库 ${created.name}`);
+      await refreshKnowledge();
+      setSelectedDatasetId(created.id);
+      await selectDataset(created.id);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "知识库创建失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function addDocument() {
+    if (!selectedDatasetId) return;
+    setBusyAction("document");
+    try {
+      await call(`/api/aio/admin/datasets/${selectedDatasetId}/documents`, { method: "POST", body: JSON.stringify({ name: "控制台文本文档", sourceType: "text", text: newDocumentText }) });
+      setStatus("文档已写入并完成轻量索引");
+      await selectDataset(selectedDatasetId);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "文档写入失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function uploadDocumentFile() {
+    if (!selectedDatasetId || !knowledgeFile) return;
+    setBusyAction("document-upload");
+    try {
+      const formData = new FormData();
+      formData.append("file", knowledgeFile);
+      await uploadForm(`/api/aio/admin/datasets/${selectedDatasetId}/documents/upload`, formData);
+      setKnowledgeFile(null);
+      setStatus("文件已上传、解析并写入索引");
+      await selectDataset(selectedDatasetId);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "文件上传失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function retrieveTest() {
+    if (!selectedDatasetId) return;
+    setBusyAction("retrieve");
+    try {
+      const response = await call<{ records: RetrieveRecord[] }>(`/api/aio/admin/datasets/${selectedDatasetId}/retrieve-test`, { method: "POST", body: JSON.stringify({ query: retrieveQuery, topK: 5 }) });
+      setRetrieveRecords(response.records || []);
+      setStatus(`检索完成：${response.records?.length || 0} 条命中`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "检索测试失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function refreshWaitTasks() {
+    setWaitTasksLoading(true);
+    setWaitTasksError("");
+    try {
+      const queryString = waitTaskFilter === "all" ? "" : `?status=${encodeURIComponent(waitTaskFilter)}`;
+      const nextTasks = await call<WaitTaskRecord[]>(`/api/aio/admin/wait-tasks${queryString}`);
+      setWaitTasks(nextTasks);
+      setStatus("流程等待已同步");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "任务中心加载失败";
+      setWaitTasksError(message);
+      setStatus(message);
+    } finally {
+      setWaitTasksLoading(false);
+    }
+  }
+
+  async function submitWaitTask(task: WaitTaskRecord, action = "approve") {
+    setBusyAction(`wait-${task.id}`);
+    try {
+      await call(`/api/aio/admin/wait-tasks/${task.id}/submit`, { method: "POST", headers: { "Idempotency-Key": `console-${task.id}-${Date.now()}` }, body: JSON.stringify({ action, comment: "流程等待工作台处理" }) });
+      setStatus(`等待任务已${action === "reject" ? "拒绝" : "提交"}`);
+      await refreshWaitTasks();
+      await refreshRuns();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "任务提交失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function refreshOrgOps() {
+    setOrgLoading(true);
+    setOrgError("");
+    try {
+      const [nextTenants, nextWorkspaces, nextKeys, nextUsage, nextAudit] = await Promise.all([
+        call<TenantRecord[]>("/api/aio/admin/tenants"),
+        call<WorkspaceRecord[]>("/api/aio/admin/workspaces"),
+        call<ApiKeyRecord[]>("/api/aio/admin/api-keys"),
+        call<UsageSummary>("/api/aio/admin/usage-summary"),
+        call<AuditEvent[]>("/api/aio/admin/audit-events")
+      ]);
+      setTenants(nextTenants);
+      setWorkspaces(nextWorkspaces);
+      setApiKeys(nextKeys);
+      setUsageSummary(nextUsage);
+      setAuditEvents(nextAudit);
+      setStatus("组织、用量与审计已同步");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "组织运营数据加载失败";
+      setOrgError(message);
+      setStatus(message);
+    } finally {
+      setOrgLoading(false);
+    }
+  }
+
+  async function refreshWorkspaceOptions() {
+    try {
+      const nextWorkspaces = await call<WorkspaceRecord[]>("/api/aio/admin/workspaces");
+      setWorkspaces(nextWorkspaces);
+    } catch {
+      setWorkspaces([]);
+    }
+  }
+
+  async function refreshProviders() {
+    setProvidersLoading(true);
+    setProvidersError("");
+    try {
+      const nextProviders = await call<ProviderRecord[]>("/api/aio/admin/providers");
+      setProviders(nextProviders);
+      setStatus("模型供应商已同步");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "模型供应商加载失败";
+      setProvidersError(message);
+      setStatus(message);
+    } finally {
+      setProvidersLoading(false);
+    }
+  }
+
+  async function createProvider() {
+    setBusyAction("provider-create");
+    try {
+      await call<ProviderRecord>("/api/aio/admin/providers", {
+        method: "POST",
+        body: JSON.stringify({ ...providerForm, workspaceId: authSession?.workspaceId || "default", apiKey: providerForm.apiKey || undefined })
+      });
+      setProviderForm((current) => ({ ...current, apiKey: "" }));
+      setStatus("模型供应商已保存");
+      await refreshProviders();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "模型供应商保存失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function testProvider(provider: ProviderRecord) {
+    setBusyAction(`provider-test-${provider.id}`);
+    try {
+      const result = await call<Record<string, unknown>>(`/api/aio/admin/providers/${provider.id}/test`, { method: "POST" });
+      setStatus(`供应商测试完成：${String(result.status || result.message || "ok")}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "供应商测试失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function disableProvider(provider: ProviderRecord) {
+    if (!window.confirm(`确认禁用模型供应商「${provider.name}」？`)) return;
+    setBusyAction(`provider-disable-${provider.id}`);
+    try {
+      await call<ProviderRecord>(`/api/aio/admin/providers/${provider.id}/disable`, { method: "POST" });
+      setStatus(`已禁用 ${provider.name}`);
+      await refreshProviders();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "供应商禁用失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
   function openDesigner(app: AppRecord) {
     setSelectedAppId(app.id);
     setView("designer");
@@ -430,6 +894,31 @@ export default function App() {
     setSelectedAppId(app?.id || "");
     setView("observability");
     navigateObservability(app);
+  }
+
+  function openExperience(app: AppRecord) {
+    setSelectedAppId(app.id);
+    setView("experience");
+    setExperienceMessages([]);
+    navigateExperience(app);
+  }
+
+  function openKnowledge() {
+    setSelectedAppId("");
+    setView("knowledge");
+    navigateKnowledge();
+  }
+
+  function openProviders() {
+    setSelectedAppId("");
+    setView("providers");
+    navigateProviders();
+  }
+
+  function openOrg() {
+    setSelectedAppId("");
+    setView("org");
+    navigateOrg();
   }
 
   function backToCenter() {
@@ -515,19 +1004,33 @@ export default function App() {
     setConnecting(null);
   }
 
+  if (!authSession) {
+    return <LoginPage username={loginUsername} password={loginPassword} error={loginError} loggingIn={busyAction === "login"} setUsername={setLoginUsername} setPassword={setLoginPassword} login={loginConsole} />;
+  }
+
   return (
     <main className="consoleShell">
-      <TopNav status={status} />
+      <TopNav status={status} session={authSession} workspaces={workspaces} menuOpen={userMenuOpen} settingsOpen={settingsMenuOpen} switching={busyAction === "switch-workspace"} setMenuOpen={setUserMenuOpen} setSettingsOpen={setSettingsMenuOpen} switchWorkspace={switchWorkspace} openProviders={openProviders} logout={logoutConsole} />
       <section className="consoleBody">
-        <SideNav activeView={view} onCreate={() => openCreateModal("agent", "chat-assistant")} openApps={backToCenter} openObservability={() => openObservability()} />
+        <SideNav activeView={view} session={authSession} onCreate={() => openCreateModal("agent", "agent")} openApps={backToCenter} openObservability={() => openObservability()} openKnowledge={openKnowledge} openOrg={openOrg} />
         {view === "center" ? (
-          <AppCenter apps={apps} visibleApps={visibleApps} loading={appsLoading} error={appsError} filter={filter} query={query} setFilter={setFilter} setQuery={setQuery} refreshApps={refreshApps} openCreateModal={openCreateModal} openDesigner={openDesigner} />
+          <AppCenter apps={apps} visibleApps={visibleApps} loading={appsLoading} error={appsError} filter={filter} query={query} session={authSession} setFilter={setFilter} setQuery={setQuery} refreshApps={refreshApps} openCreateModal={openCreateModal} openDesigner={openDesigner} openExperience={openExperience} archiveApp={archiveApp} busyAction={busyAction} />
         ) : view === "api" ? (
-          <AppApiDocsPage selectedApp={selectedApp} selectedAppId={selectedAppId} appsLoading={appsLoading} runtimeKey={runtimeKey} setRuntimeKey={setRuntimeKey} busyAction={busyAction} createRuntimeKey={createRuntimeKey} openDesigner={openDesigner} back={backToCenter} />
+          <AppApiDocsPage selectedApp={selectedApp} selectedAppId={selectedAppId} appsLoading={appsLoading} session={authSession} runtimeKey={runtimeKey} setRuntimeKey={setRuntimeKey} busyAction={busyAction} createRuntimeKey={createRuntimeKey} openDesigner={openDesigner} back={backToCenter} />
+        ) : view === "experience" ? (
+          <ExperiencePage selectedApp={selectedApp} selectedAppId={selectedAppId} appsLoading={appsLoading} messages={experienceMessages} input={experienceInput} feedback={experienceFeedback} runtimeKey={runtimeKey} busyAction={busyAction} setInput={setExperienceInput} setFeedback={setExperienceFeedback} createRuntimeKey={createRuntimeKey} sendMessage={sendExperienceMessage} submitWait={submitExperienceWait} openDesigner={openDesigner} back={backToCenter} />
         ) : view === "observability" ? (
           <RunObservabilityPage apps={apps} selectedApp={selectedApp} selectedAppId={selectedAppId} runs={runs} traces={traces} selectedRun={selectedRun} selectedRunId={selectedRunId} loading={runsLoading} tracesLoading={tracesLoading} error={runsError} refreshRuns={() => refreshRuns(selectedAppId || undefined)} selectRun={setSelectedRunId} openDesigner={openDesigner} openGlobal={() => openObservability()} back={backToCenter} />
+        ) : view === "knowledge" ? (
+          <KnowledgePage datasets={datasets} documents={documents} retrieveRecords={retrieveRecords} selectedDatasetId={selectedDatasetId} loading={knowledgeLoading} error={knowledgeError} newDatasetName={newDatasetName} newDocumentText={newDocumentText} retrieveQuery={retrieveQuery} knowledgeFile={knowledgeFile} busyAction={busyAction} setNewDatasetName={setNewDatasetName} setNewDocumentText={setNewDocumentText} setRetrieveQuery={setRetrieveQuery} setKnowledgeFile={setKnowledgeFile} refreshKnowledge={refreshKnowledge} selectDataset={selectDataset} createDataset={createDataset} addDocument={addDocument} uploadDocumentFile={uploadDocumentFile} retrieveTest={retrieveTest} />
+        ) : view === "tasks" ? (
+          <TaskCenterPage tasks={waitTasks} loading={waitTasksLoading} error={waitTasksError} filter={waitTaskFilter} busyAction={busyAction} setFilter={setWaitTaskFilter} refreshTasks={refreshWaitTasks} submitTask={submitWaitTask} />
+        ) : view === "providers" ? (
+          <ProviderPage providers={providers} loading={providersLoading} error={providersError} form={providerForm} busyAction={busyAction} setForm={setProviderForm} refreshProviders={refreshProviders} createProvider={createProvider} testProvider={testProvider} disableProvider={disableProvider} />
+        ) : view === "org" ? (
+          <OrgOpsPage tenants={tenants} workspaces={workspaces} apiKeys={apiKeys} usage={usageSummary} auditEvents={auditEvents} session={authSession} loading={orgLoading} error={orgError} refreshOrg={refreshOrgOps} />
         ) : (
-          <DesignerPage selectedApp={selectedApp} selectedAppId={selectedAppId} appsLoading={appsLoading} definitionLoading={definitionLoading} busyAction={busyAction} agentDraft={agentDraft} setAgentDraft={setAgentDraft} runResult={runResult} runtimeKey={runtimeKey} setRuntimeKey={setRuntimeKey} validationReport={validationReport} releasePanelOpen={releasePanelOpen} setReleasePanelOpen={setReleasePanelOpen} publishSelectedApp={publishSelectedApp} validateSelectedApp={validateSelectedApp} createRuntimeKey={createRuntimeKey} invokeSelectedApp={invokeSelectedApp} openApiDocs={openApiDocs} openObservability={openObservability} back={backToCenter} workflowProps={{ canvasRef, nodes, edges, connecting, selectedNode, selectedEdge, workflowDefinition, addNode, removeNode, removeEdge, updateEdge, updateNode, updateNodeConfig, startDrag, startConnect, finishConnect, moveOnCanvas, stopCanvasInteraction, selectNode: (nodeId: string) => { setSelectedNodeId(nodeId); setSelectedEdgeId(""); }, selectEdge: (edgeId: string) => { setSelectedEdgeId(edgeId); setSelectedNodeId(""); } }} />
+          <DesignerPage selectedApp={selectedApp} selectedAppId={selectedAppId} appsLoading={appsLoading} definitionLoading={definitionLoading} busyAction={busyAction} agentDraft={agentDraft} setAgentDraft={setAgentDraft} modelOptions={modelOptions} runResult={runResult} runtimeKey={runtimeKey} setRuntimeKey={setRuntimeKey} validationReport={validationReport} releasePanelOpen={releasePanelOpen} setReleasePanelOpen={setReleasePanelOpen} publishSelectedApp={publishSelectedApp} validateSelectedApp={validateSelectedApp} createRuntimeKey={createRuntimeKey} invokeSelectedApp={invokeSelectedApp} archiveApp={archiveApp} openApiDocs={openApiDocs} openObservability={openObservability} openExperience={openExperience} back={backToCenter} workflowProps={{ canvasRef, nodes, edges, connecting, selectedNode, selectedEdge, workflowDefinition, addNode, removeNode, removeEdge, updateEdge, updateNode, updateNodeConfig, startDrag, startConnect, finishConnect, moveOnCanvas, stopCanvasInteraction, selectNode: (nodeId: string) => { setSelectedNodeId(nodeId); setSelectedEdgeId(""); }, selectEdge: (edgeId: string) => { setSelectedEdgeId(edgeId); setSelectedNodeId(""); } }} />
         )}
       </section>
       {createOpen && <CreateAppModal createType={createType} createMode={createMode} createName={createName} creating={busyAction === "create"} setCreateType={setCreateType} setCreateMode={setCreateMode} setCreateName={setCreateName} close={() => setCreateOpen(false)} createApp={createApp} />}
@@ -535,22 +1038,29 @@ export default function App() {
   );
 }
 
-function TopNav({ status }: { status: string }) {
-  return <header className="topNav"><div className="logoGroup"><div className="logoGem">A</div><strong>Aio</strong><span>Default Workspace</span><ChevronDown size={14} /></div><nav className="topTabs"><button>探索</button><button className="active"><Boxes size={15} /> 工作室</button><button>知识库</button><button>工具</button></nav><div className="statusDot"><Sparkles size={14} /> {status}</div><div className="avatar">D</div></header>;
+function LoginPage(props: { username: string; password: string; error: string; loggingIn: boolean; setUsername: (value: string) => void; setPassword: (value: string) => void; login: () => Promise<void> }) {
+  return <main className="loginShell"><section className="loginCard"><div className="loginBrand"><div className="logoGem">A</div><div><strong>Aio Console</strong><span>私有化部署 · 控制台登录</span></div></div><h1>登录管理控制台</h1><p>请输入管理员账号和密码。</p>{props.error && <div className="errorBanner"><AlertCircle size={16} /><span>{props.error}</span></div>}<Field label="用户名"><input value={props.username} onChange={(event) => props.setUsername(event.target.value)} placeholder="用户名" autoFocus /></Field><Field label="密码"><input type="password" value={props.password} onChange={(event) => props.setPassword(event.target.value)} placeholder="请输入控制台密码" onKeyDown={(event) => { if (event.key === "Enter") void props.login(); }} /></Field><button className="primaryBtn loginBtn" disabled={props.loggingIn} onClick={() => void props.login()}>{props.loggingIn ? <Loader2 className="spin" size={16} /> : <ShieldCheck size={16} />} 登录</button></section></main>;
 }
 
-function SideNav({ activeView, onCreate, openApps, openObservability }: { activeView: CenterView; onCreate: () => void; openApps: () => void; openObservability: () => void }) {
-  return <aside className="sideNav"><button className="createBtn" onClick={onCreate}><Plus size={17} /> 创建应用</button><button className="sideItem"><Grid3X3 size={18} /> 应用广场</button><button className={`sideItem ${activeView === "center" || activeView === "designer" || activeView === "api" ? "active" : ""}`} onClick={openApps}><Boxes size={18} /> 应用管理</button><button className={`sideItem ${activeView === "observability" ? "active" : ""}`} onClick={openObservability}><Play size={18} /> 运行观测</button><button className="sideItem"><Zap size={18} /> 任务中心</button><p className="sideGroup">MCP</p><button className="sideItem"><Code2 size={18} /> MCP 广场</button><button className="sideItem"><Layers3 size={18} /> MCP 管理</button></aside>;
+function TopNav({ status, session, workspaces, menuOpen, settingsOpen, switching, setMenuOpen, setSettingsOpen, switchWorkspace, openProviders, logout }: { status: string; session: AuthSession; workspaces: WorkspaceRecord[]; menuOpen: boolean; settingsOpen: boolean; switching: boolean; setMenuOpen: (open: boolean) => void; setSettingsOpen: (open: boolean) => void; switchWorkspace: (workspaceId: string) => Promise<void>; openProviders: () => void; logout: () => void }) {
+  const displayName = session.displayName || session.userId;
+  const roleLabel = session.role === "admin" || (!session.role && session.userId === "admin") ? "管理员" : "成员";
+  const options = workspaces.some((workspace) => workspace.id === session.workspaceId) ? workspaces : [{ id: session.workspaceId, tenantId: session.tenantId, name: session.workspaceId, status: "active" }, ...workspaces];
+  return <header className="topNav"><div className="logoGroup"><div className="logoGem">A</div><strong>Aio</strong></div><div className="statusDot"><Sparkles size={14} /><span>{status}</span></div><div className="topActions"><div className="settingsWrap"><button className="settingsBtn" title="系统设置" onClick={() => { setSettingsOpen(!settingsOpen); setMenuOpen(false); }}><Settings2 size={17} /></button>{settingsOpen && <div className="settingsMenu"><strong>系统设置</strong><button onClick={() => { setSettingsOpen(false); openProviders(); }}><Bot size={16} /><span><b>模型供应商</b><small>配置 LLM 网关、模型和 API Key</small></span></button></div>}</div><div className="avatarWrap"><button className="avatar" title="账号菜单" onClick={() => { setMenuOpen(!menuOpen); setSettingsOpen(false); }}>{displayName.slice(0, 1).toUpperCase()}</button>{menuOpen && <div className="avatarMenu"><strong>基本信息</strong><dl><dt>账号</dt><dd>{session.userId}</dd><dt>名称</dt><dd>{displayName}</dd><dt>角色</dt><dd>{roleLabel}</dd><dt>租户</dt><dd>{session.tenantId}</dd><dt>工作空间</dt><dd>{session.workspaceId}</dd></dl><label className="menuField"><span>切换工作空间</span><select value={session.workspaceId} disabled={switching || options.length <= 1} onChange={(event) => void switchWorkspace(event.target.value)}>{options.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name || workspace.id} · {workspace.id}</option>)}</select></label><button className="dangerTextBtn" onClick={logout}><X size={14} /> 退出登录</button></div>}</div></div></header>;
 }
 
-function AppCenter(props: { apps: AppRecord[]; visibleApps: AppRecord[]; loading: boolean; error: string; filter: "all" | AppKind; query: string; setFilter: (filter: "all" | AppKind) => void; setQuery: (query: string) => void; refreshApps: () => Promise<void>; openCreateModal: (type: AppKind, mode?: AgentMode) => void; openDesigner: (app: AppRecord) => void }) {
+function SideNav({ activeView, session, onCreate, openApps, openObservability, openKnowledge, openOrg }: { activeView: CenterView; session: AuthSession; onCreate: () => void; openApps: () => void; openObservability: () => void; openKnowledge: () => void; openOrg: () => void }) {
+  return <aside className="sideNav"><button className="createBtn" onClick={onCreate}><Plus size={17} /> 创建应用</button><button className={`sideItem ${activeView === "center" || activeView === "designer" || activeView === "experience" || activeView === "api" ? "active" : ""}`} onClick={openApps}><Boxes size={18} /> 应用管理</button><button className={`sideItem ${activeView === "knowledge" ? "active" : ""}`} onClick={openKnowledge}><Database size={18} /> 知识库</button><button className={`sideItem ${activeView === "observability" ? "active" : ""}`} onClick={openObservability}><Play size={18} /> 运行观测</button><button className={`sideItem ${activeView === "org" ? "active" : ""}`} onClick={openOrg}><Building2 size={18} /> 组织运营</button><p className="sideGroup">当前空间：{session.workspaceId}<br />账号：{session.displayName || session.userId}</p></aside>;
+}
+
+function AppCenter(props: { apps: AppRecord[]; visibleApps: AppRecord[]; loading: boolean; error: string; filter: "all" | AppKind; query: string; session: AuthSession; setFilter: (filter: "all" | AppKind) => void; setQuery: (query: string) => void; refreshApps: () => Promise<void>; openCreateModal: (type: AppKind, mode?: AgentMode) => void; openDesigner: (app: AppRecord) => void; openExperience: (app: AppRecord) => void; archiveApp: (app: AppRecord) => Promise<void>; busyAction: string }) {
   const isFilteredEmpty = !props.loading && !props.error && props.apps.length > 0 && props.visibleApps.length === 0;
-  return <section className="workspacePane"><div className="pageHeader"><div><h1>应用管理</h1><p>创建、设计、发布 Agent 与 Workflow 应用。</p></div><div className="headerActions"><button className="ghostBtn">使用指南</button><button className="primaryBtn" onClick={() => props.openCreateModal("agent", "chat-assistant")}><Plus size={17} /> 创建应用</button></div></div>{props.error && <div className="errorBanner"><AlertCircle size={16} /><span>{props.error}</span><button onClick={() => void props.refreshApps()}>重试</button></div>}<div className="toolbar"><div className="filterTabs">{([{ key: "all", label: "全部" }, { key: "agent", label: "Agent" }, { key: "workflow", label: "工作流" }] as const).map((item) => <button key={item.key} className={props.filter === item.key ? "active" : ""} onClick={() => props.setFilter(item.key)}>{item.label}</button>)}</div><div className="searchInput"><Search size={16} /><input value={props.query} onChange={(event) => props.setQuery(event.target.value)} placeholder="搜索应用名称" /></div><button className="iconBtn" disabled={props.loading} onClick={() => void props.refreshApps()}>{props.loading ? <Loader2 className="spin" size={17} /> : <RefreshCw size={17} />}</button></div>{props.loading && <StatePanel icon="loading" title="正在同步应用列表" text="正在读取当前空间的应用、发布状态和最近更新时间。" />}{!props.loading && !props.error && <div className="appGrid"><button className="createCard" onClick={() => props.openCreateModal("agent", "chat-assistant")}><Plus size={22} /><strong>创建应用</strong><span>空白应用 / 模板 / DSL 导入</span></button>{props.visibleApps.map((app) => <AppTile key={app.id} app={app} openDesigner={props.openDesigner} />)}</div>}{!props.loading && !props.error && !props.apps.length && <StatePanel title="暂无应用" text="从 Chatflow、Agent、文本生成或 Workflow 开始创建第一个应用。" />}{isFilteredEmpty && <StatePanel title="没有匹配的应用" text="请调整筛选条件或搜索关键字。" />}</section>;
+  return <section className="workspacePane"><div className="pageHeader"><div><h1>应用管理</h1><p>当前账号只看到工作空间 {props.session.workspaceId} 的应用和数据。</p></div><div className="headerActions"><button className="primaryBtn" onClick={() => props.openCreateModal("agent", "agent")}><Plus size={17} /> 创建应用</button></div></div>{props.error && <div className="errorBanner"><AlertCircle size={16} /><span>{props.error}</span><button onClick={() => void props.refreshApps()}>重试</button></div>}<div className="toolbar"><div className="filterTabs">{([{ key: "all", label: "全部" }, { key: "agent", label: "Agent" }, { key: "workflow", label: "工作流" }] as const).map((item) => <button key={item.key} className={props.filter === item.key ? "active" : ""} onClick={() => props.setFilter(item.key)}>{item.label}</button>)}</div><div className="searchInput"><Search size={16} /><input value={props.query} onChange={(event) => props.setQuery(event.target.value)} placeholder="搜索应用名称" /></div><button className="iconBtn" disabled={props.loading} onClick={() => void props.refreshApps()}>{props.loading ? <Loader2 className="spin" size={17} /> : <RefreshCw size={17} />}</button></div>{props.loading && <StatePanel icon="loading" title="正在同步应用列表" text="正在读取当前空间的应用、发布状态和最近更新时间。" />}{!props.loading && !props.error && <div className="appGrid"><button className="createCard" onClick={() => props.openCreateModal("agent", "agent")}><Plus size={22} /><strong>创建应用</strong><span>空白 Agent / Workflow</span></button>{props.visibleApps.map((app) => <AppTile key={app.id} app={app} openDesigner={props.openDesigner} openExperience={props.openExperience} archiveApp={props.archiveApp} archiving={props.busyAction === `archive-${app.id}`} />)}</div>}{!props.loading && !props.error && !props.apps.length && <StatePanel title="暂无应用" text="当前账号的工作空间还没有应用，可先创建 Agent 或 Workflow。" />}{isFilteredEmpty && <StatePanel title="没有匹配的应用" text="请调整筛选条件或搜索关键字。" />}</section>;
 }
 
-function AppTile({ app, openDesigner }: { app: AppRecord; openDesigner: (app: AppRecord) => void }) {
+function AppTile({ app, openDesigner, openExperience, archiveApp, archiving }: { app: AppRecord; openDesigner: (app: AppRecord) => void; openExperience: (app: AppRecord) => void; archiveApp: (app: AppRecord) => Promise<void>; archiving: boolean }) {
   const statusMeta = getAppStatusMeta(app);
-  return <button className="appTile" onClick={() => openDesigner(app)}><div className="tileTop"><span className={`tileIcon ${app.type}`}>{app.type === "agent" ? <Bot size={20} /> : <Workflow size={20} />}</span><span className={`publishState ${statusMeta.tone}`}><i /> {statusMeta.label}</span></div><strong>{app.name}</strong><dl><dt>应用 ID</dt><dd>{app.id}</dd><dt>应用类型</dt><dd>{app.type === "workflow" ? "工作流" : "Agent"}</dd></dl><p>更新于 {formatDate(app.updatedAt)}</p></button>;
+  return <article className="appTile" role="button" tabIndex={0} onClick={() => openDesigner(app)} onKeyDown={(event) => { if (event.key === "Enter") openDesigner(app); }}><div className="tileTop"><span className={`tileIcon ${app.type}`}>{app.type === "agent" ? <Bot size={20} /> : <Workflow size={20} />}</span><span className={`publishState ${statusMeta.tone}`}><i /> {statusMeta.label}</span></div><strong>{app.name}</strong><dl><dt>应用 ID</dt><dd>{app.id}</dd><dt>应用类型</dt><dd>{app.type === "workflow" ? "工作流" : "Agent"}</dd></dl><div className="tileActions"><p>更新于 {formatDate(app.updatedAt)}</p><div className="tileActionButtons"><button className="ghostTinyBtn" onClick={(event) => { event.stopPropagation(); openExperience(app); }}><Play size={14} /> 体验</button><button className="dangerTextBtn" disabled={archiving} onClick={(event) => { event.stopPropagation(); void archiveApp(app); }}>{archiving ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />} 删除</button></div></div></article>;
 }
 
 function CreateAppModal(props: { createType: AppKind; createMode: AgentMode; createName: string; creating: boolean; setCreateType: (type: AppKind) => void; setCreateMode: (mode: AgentMode) => void; setCreateName: (name: string) => void; close: () => void; createApp: () => Promise<void> }) {
@@ -561,10 +1071,28 @@ function CreateTypeCard({ active, icon: Icon, title, text, onClick }: { active: 
   return <button className={`typeCard ${active ? "active" : ""}`} onClick={onClick}><Icon size={22} /><strong>{title}</strong><span>{text}</span></button>;
 }
 
-function DesignerPage(props: { selectedApp?: AppRecord; selectedAppId: string; appsLoading: boolean; definitionLoading: boolean; busyAction: string; agentDraft: AgentDraft; setAgentDraft: (draft: AgentDraft) => void; runResult: Record<string, unknown> | null; runtimeKey: string; setRuntimeKey: (value: string) => void; validationReport: ValidationReport | null; releasePanelOpen: boolean; setReleasePanelOpen: (open: boolean) => void; publishSelectedApp: () => Promise<void>; validateSelectedApp: () => Promise<void>; createRuntimeKey: () => Promise<void>; invokeSelectedApp: () => Promise<void>; openApiDocs: (app: AppRecord) => void; openObservability: (app: AppRecord) => void; back: () => void; workflowProps: WorkflowDesignerProps }) {
+function DesignerPage(props: { selectedApp?: AppRecord; selectedAppId: string; appsLoading: boolean; definitionLoading: boolean; busyAction: string; agentDraft: AgentDraft; setAgentDraft: (draft: AgentDraft) => void; modelOptions: string[]; runResult: Record<string, unknown> | null; runtimeKey: string; setRuntimeKey: (value: string) => void; validationReport: ValidationReport | null; releasePanelOpen: boolean; setReleasePanelOpen: (open: boolean) => void; publishSelectedApp: () => Promise<void>; validateSelectedApp: () => Promise<void>; createRuntimeKey: () => Promise<void>; invokeSelectedApp: () => Promise<void>; archiveApp: (app: AppRecord) => Promise<void>; openApiDocs: (app: AppRecord) => void; openObservability: (app: AppRecord) => void; openExperience: (app: AppRecord) => void; back: () => void; workflowProps: WorkflowDesignerProps }) {
   if (!props.selectedApp) return <section className="workspacePane"><button className="backBtn" onClick={props.back}><ArrowLeft size={17} /> 应用中心</button><StatePanel icon={props.appsLoading ? "loading" : "missing"} title={props.appsLoading ? "正在打开应用" : "未找到应用"} text={props.appsLoading ? `正在加载 ${props.selectedAppId || "当前应用"} 的基础信息。` : "该应用不存在、已归档，或当前空间没有访问权限。"} /></section>;
   const statusMeta = getAppStatusMeta(props.selectedApp);
-  return <section className="designerPane"><header className="designerHeader"><button className="backBtn" onClick={props.back}><ArrowLeft size={17} /> 应用中心</button><div className="designerTitle"><span className={`tileIcon ${props.selectedApp.type}`}>{props.selectedApp.type === "agent" ? <Bot size={20} /> : <Workflow size={20} />}</span><div><h1>{props.selectedApp.name}</h1><p>{props.selectedApp.type} · {statusMeta.label} · {props.selectedApp.id}</p></div>{props.definitionLoading && <span className="statusPill"><Loader2 className="spin" size={13} /> 同步版本</span>}</div><div className="designerActions"><button className="ghostBtn" onClick={() => props.openObservability(props.selectedApp!)}><Play size={16} /> 运行观测</button><button className="ghostBtn" onClick={() => props.openApiDocs(props.selectedApp!)}><Code2 size={16} /> API 文档</button><button className="ghostBtn" disabled={!!props.busyAction} onClick={() => void props.validateSelectedApp()}>{props.busyAction === "validate" ? <Loader2 className="spin" size={16} /> : <AlertCircle size={16} />} 发布检查</button><button className="ghostBtn" disabled={!!props.busyAction} onClick={() => void props.createRuntimeKey()}>{props.busyAction === "key" ? <Loader2 className="spin" size={16} /> : <Save size={16} />} 生成 Key</button><button className="ghostBtn" disabled={!!props.busyAction} onClick={() => void props.invokeSelectedApp()}>{props.busyAction === "run" ? <Loader2 className="spin" size={16} /> : <Play size={16} />} 试运行</button><button className="primaryBtn" disabled={!!props.busyAction} onClick={() => void props.publishSelectedApp()}>{props.busyAction === "publish" ? <Loader2 className="spin" size={16} /> : <Rocket size={16} />} 发布</button></div></header>{props.selectedApp.type === "agent" ? <AgentDesigner draft={props.agentDraft} setDraft={props.setAgentDraft} runResult={props.runResult} runtimeKey={props.runtimeKey} setRuntimeKey={props.setRuntimeKey} /> : <WorkflowDesigner {...props.workflowProps} />}{props.releasePanelOpen && <ReleaseCheckPanel report={props.validationReport} close={() => props.setReleasePanelOpen(false)} />}</section>;
+  return <section className="designerPane"><header className="designerHeader"><button className="backBtn" onClick={props.back}><ArrowLeft size={17} /> 应用中心</button><div className="designerTitle"><span className={`tileIcon ${props.selectedApp.type}`}>{props.selectedApp.type === "agent" ? <Bot size={20} /> : <Workflow size={20} />}</span><div><h1>{props.selectedApp.name}</h1><p>{props.selectedApp.type} · {statusMeta.label} · {props.selectedApp.id}</p></div>{props.definitionLoading && <span className="statusPill"><Loader2 className="spin" size={13} /> 同步版本</span>}</div><div className="designerActions"><button className="primaryBtn" onClick={() => props.openExperience(props.selectedApp!)}><Play size={16} /> 对话体验</button><button className="ghostBtn" onClick={() => props.openObservability(props.selectedApp!)}><Play size={16} /> 运行观测</button><button className="ghostBtn" onClick={() => props.openApiDocs(props.selectedApp!)}><Code2 size={16} /> API 文档</button><button className="ghostBtn" disabled={!!props.busyAction} onClick={() => void props.validateSelectedApp()}>{props.busyAction === "validate" ? <Loader2 className="spin" size={16} /> : <AlertCircle size={16} />} 发布检查</button><button className="ghostBtn" disabled={!!props.busyAction} onClick={() => void props.createRuntimeKey()}>{props.busyAction === "key" ? <Loader2 className="spin" size={16} /> : <Save size={16} />} 生成 Key</button><button className="ghostBtn" disabled={!!props.busyAction} onClick={() => void props.invokeSelectedApp()}>{props.busyAction === "run" ? <Loader2 className="spin" size={16} /> : <Play size={16} />} 试运行</button><button className="dangerBtn" disabled={!!props.busyAction} onClick={() => void props.archiveApp(props.selectedApp!)}>{props.busyAction === `archive-${props.selectedApp.id}` ? <Loader2 className="spin" size={16} /> : <Trash2 size={16} />} 删除</button><button className="primaryBtn" disabled={!!props.busyAction} onClick={() => void props.publishSelectedApp()}>{props.busyAction === "publish" ? <Loader2 className="spin" size={16} /> : <Rocket size={16} />} 发布</button></div></header>{props.selectedApp.type === "agent" ? <AgentDesigner draft={props.agentDraft} setDraft={props.setAgentDraft} modelOptions={props.modelOptions} runResult={props.runResult} runtimeKey={props.runtimeKey} setRuntimeKey={props.setRuntimeKey} /> : <WorkflowDesigner {...props.workflowProps} />}{props.releasePanelOpen && <ReleaseCheckPanel report={props.validationReport} close={() => props.setReleasePanelOpen(false)} />}</section>;
+}
+
+function ExperiencePage(props: { selectedApp?: AppRecord; selectedAppId: string; appsLoading: boolean; messages: ExperienceMessage[]; input: string; feedback: string; runtimeKey: string; busyAction: string; setInput: (value: string) => void; setFeedback: (value: string) => void; createRuntimeKey: () => Promise<void>; sendMessage: () => Promise<void>; submitWait: (task: RuntimeWaitTask, action?: string) => Promise<void>; openDesigner: (app: AppRecord) => void; back: () => void }) {
+  if (!props.selectedApp) return <section className="workspacePane"><button className="backBtn" onClick={props.back}><ArrowLeft size={17} /> 应用中心</button><StatePanel icon={props.appsLoading ? "loading" : "missing"} title={props.appsLoading ? "正在打开应用体验" : "未找到应用"} text={props.appsLoading ? `正在加载 ${props.selectedAppId || "当前应用"} 的体验信息。` : "该应用不存在、已归档，或当前空间没有访问权限。"} /></section>;
+  const app = props.selectedApp;
+  const canSend = !!props.runtimeKey && app.status === "published" && !!props.input.trim() && props.busyAction !== "experience-send";
+  return <section className="experiencePane"><div className="experienceHero"><button className="backBtn" onClick={props.back}><ArrowLeft size={17} /> 应用中心</button><div className="experienceHeroText"><span className={`tileIcon ${app.type}`}>{app.type === "agent" ? <Bot size={20} /> : <Workflow size={20} />}</span><div><h1>{app.name}</h1><p>{app.type === "workflow" ? "像最终用户一样发起流程，对话中直接提交反馈，AI 会自动续跑。" : "像最终用户一样直接和 Agent 对话，不需要先看 API 文档。"}</p></div></div><div className="designerActions"><button className="ghostBtn" onClick={() => props.openDesigner(app)}><Settings2 size={16} /> 返回设计</button><button className="ghostBtn" disabled={props.busyAction === "key"} onClick={() => void props.createRuntimeKey()}>{props.busyAction === "key" ? <Loader2 className="spin" size={16} /> : <Save size={16} />} {props.runtimeKey ? "重新生成 Key" : "生成体验 Key"}</button></div></div>{app.status !== "published" && <div className="warningBox"><AlertCircle size={16} /> 当前应用尚未发布。请先发布应用，体验界面会调用已发布版本。</div>}<div className="experienceShell"><aside className="experienceBrief"><strong>体验通道</strong><dl><dt>App ID</dt><dd>{app.id}</dd><dt>类型</dt><dd>{app.type === "workflow" ? "Workflow" : "Agent"}</dd><dt>状态</dt><dd>{getAppStatusMeta(app).label}</dd><dt>Runtime Key</dt><dd>{props.runtimeKey ? "已就绪" : "未生成"}</dd></dl><p>{app.type === "workflow" ? "当流程到达人工确认节点时，等待卡片会直接出现在对话流里；用户点击确认或拒绝后，后端立即恢复流程。" : "Agent 回复会直接显示在对话流里，运行记录仍进入运行观测。"}</p></aside><main className="chatConsole"><div className="chatFeed">{!props.messages.length && <div className="chatEmpty"><Sparkles size={26} /><strong>开始一次真实应用体验</strong><span>{app.type === "workflow" ? "输入业务问题，流程暂停时会在这里等待用户反馈。" : "输入问题，直接查看 Agent 的最终回复。"}</span></div>}{props.messages.map((message) => <ExperienceBubble key={message.id} message={message} feedback={props.feedback} busyAction={props.busyAction} setFeedback={props.setFeedback} submitWait={props.submitWait} />)}{props.busyAction === "experience-send" && <div className="chatThinking"><Loader2 className="spin" size={16} /> AI 应用正在处理...</div>}</div><div className="chatComposer"><textarea value={props.input} onChange={(event) => props.setInput(event.target.value)} placeholder={app.type === "workflow" ? "输入流程问题，例如：这个退款请求应该怎么处理？" : "输入你想问 Agent 的问题"} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") void props.sendMessage(); }} /><button className="primaryBtn" disabled={!canSend} onClick={() => void props.sendMessage()}>{props.busyAction === "experience-send" ? <Loader2 className="spin" size={16} /> : <Play size={16} />} 发送</button></div></main></div></section>;
+}
+
+function ExperienceBubble(props: { message: ExperienceMessage; feedback: string; busyAction: string; setFeedback: (value: string) => void; submitWait: (task: RuntimeWaitTask, action?: string) => Promise<void> }) {
+  const message = props.message;
+  if (message.role === "wait" && message.waitTask) {
+    const waitTask = message.waitTask;
+    const actions = waitTaskActions(waitTask);
+    const pending = !waitTask.status || waitTask.status === "pending";
+    return <article className="chatBubble wait"><div className="bubbleMeta"><ClipboardCheck size={15} /> {message.meta} · {waitTask.status || "pending"}</div><strong>{waitTask.title || "等待用户反馈"}</strong><p>{message.text}</p>{pending ? <Field label="反馈内容"><textarea value={props.feedback} onChange={(event) => props.setFeedback(event.target.value)} /></Field> : <p className="mutedText">该等待项已处理，流程已继续。</p>}<div className="buttonRow">{actions.map((action) => <button key={action.key} className={action.key === "reject" ? "dangerBtn" : "primaryBtn"} disabled={!pending || props.busyAction === `experience-wait-${waitTask.id}`} onClick={() => void props.submitWait(waitTask, action.key)}>{props.busyAction === `experience-wait-${waitTask.id}` ? <Loader2 className="spin" size={16} /> : <ClipboardCheck size={16} />} {action.label}</button>)}</div></article>;
+  }
+  return <article className={`chatBubble ${message.role}`}><div className="bubbleMeta">{message.role === "user" ? "用户" : message.role === "assistant" ? "AI 应用" : "系统"}{message.meta ? ` · ${message.meta}` : ""}</div><p>{message.text}</p></article>;
 }
 
 function ReleaseCheckPanel({ report, close }: { report: ValidationReport | null; close: () => void }) {
@@ -572,12 +1100,12 @@ function ReleaseCheckPanel({ report, close }: { report: ValidationReport | null;
   return <aside className="releasePanel"><div className="releasePanelHeader"><div><h2>发布检查</h2><p>{report ? (report.passed ? "无阻断错误，可以发布。" : "存在阻断错误，发布已停止。") : "尚未执行检查。"}</p></div><button className="iconBtn" onClick={close}><X size={18} /></button></div>{report && <div className="releaseSummary"><article className={report.blockingErrors ? "danger" : "success"}><strong>{report.blockingErrors}</strong><span>阻断错误</span></article><article><strong>{report.warnings}</strong><span>警告</span></article><article><strong>{report.suggestions}</strong><span>建议</span></article></div>}{!issues.length && <StatePanel title="检查通过" text="当前定义没有阻断错误。建议发布后进入运行观测查看首轮调用 Trace。" />}{issues.length > 0 && <div className="releaseIssueList">{issues.map((issue) => <article className={`releaseIssue ${issue.severity}`} key={`${issue.code}-${issue.target}-${issue.title}`}><div><span>{issue.severity === "error" ? "阻断" : issue.severity === "warning" ? "警告" : "建议"}</span><code>{issue.code}</code></div><strong>{issue.title}</strong><p>{issue.detail}</p><small>{issue.target}</small></article>)}</div>}</aside>;
 }
 
-function AppApiDocsPage(props: { selectedApp?: AppRecord; selectedAppId: string; appsLoading: boolean; runtimeKey: string; setRuntimeKey: (value: string) => void; busyAction: string; createRuntimeKey: () => Promise<void>; openDesigner: (app: AppRecord) => void; back: () => void }) {
+function AppApiDocsPage(props: { selectedApp?: AppRecord; selectedAppId: string; appsLoading: boolean; session: AuthSession; runtimeKey: string; setRuntimeKey: (value: string) => void; busyAction: string; createRuntimeKey: () => Promise<void>; openDesigner: (app: AppRecord) => void; back: () => void }) {
   if (!props.selectedApp) return <section className="workspacePane"><button className="backBtn" onClick={props.back}><ArrowLeft size={17} /> 应用中心</button><StatePanel icon={props.appsLoading ? "loading" : "missing"} title={props.appsLoading ? "正在打开 API 文档" : "未找到应用"} text={props.appsLoading ? `正在加载 ${props.selectedAppId || "当前应用"} 的 API 信息。` : "该应用不存在、已归档，或当前空间没有访问权限。"} /></section>;
   const app = props.selectedApp;
   const docs = buildApiDocs(app, props.runtimeKey);
   const statusMeta = getAppStatusMeta(app);
-  return <section className="workspacePane apiDocsPane"><div className="apiDocsHeader"><button className="backBtn" onClick={props.back}><ArrowLeft size={17} /> 应用中心</button><div className="designerTitle"><span className={`tileIcon ${app.type}`}>{app.type === "agent" ? <Bot size={20} /> : <Workflow size={20} />}</span><div><h1>{app.name} API 文档</h1><p>{app.type} · {statusMeta.label} · {app.id}</p></div></div><div className="designerActions"><button className="ghostBtn" onClick={() => props.openDesigner(app)}><Settings2 size={16} /> 返回设计</button><button className="primaryBtn" disabled={props.busyAction === "key"} onClick={() => void props.createRuntimeKey()}>{props.busyAction === "key" ? <Loader2 className="spin" size={16} /> : <Save size={16} />} 生成应用 Key</button></div></div><div className="apiDocsGrid"><aside className="designCard apiMetaCard"><h3>调用信息</h3><dl><dt>Base URL</dt><dd>{docs.baseUrl}</dd><dt>App ID</dt><dd>{app.id}</dd><dt>鉴权方式</dt><dd>Authorization: Bearer sk_xxx</dd><dt>Key Scope</dt><dd>tenant=default / workspace=default / app={app.id}</dd></dl><Field label="Runtime API Key"><input value={props.runtimeKey} onChange={(event) => props.setRuntimeKey(event.target.value)} placeholder="sk_..." /></Field>{app.status !== "published" && <div className="warningBox"><AlertCircle size={16} /> 当前应用尚未发布，外部运行 API 只会调用已发布版本。</div>}</aside><main className="apiExampleStack"><section className="designCard"><div className="sectionTitle"><Code2 size={18} /><div><h2>{docs.primaryTitle}</h2><p>{docs.primaryDescription}</p></div></div><EndpointRow method="POST" path={docs.primaryPath} /><CodeBlock title="curl" code={docs.curl} /><CodeBlock title="JavaScript" code={docs.javascript} /><CodeBlock title="Java" code={docs.java} /><CodeBlock title="Python" code={docs.python} /></section><section className="designCard"><h3>{app.type === "workflow" ? "Workflow 等待任务与 Trace" : "Run 与 Trace 查询"}</h3>{docs.extra.map((item) => <CodeBlock key={item.title} title={item.title} code={item.code} />)}</section></main></div></section>;
+  return <section className="workspacePane apiDocsPane"><div className="apiDocsHeader"><button className="backBtn" onClick={props.back}><ArrowLeft size={17} /> 应用中心</button><div className="designerTitle"><span className={`tileIcon ${app.type}`}>{app.type === "agent" ? <Bot size={20} /> : <Workflow size={20} />}</span><div><h1>{app.name} API 文档</h1><p>{app.type} · {statusMeta.label} · {app.id}</p></div></div><div className="designerActions"><button className="ghostBtn" onClick={() => props.openDesigner(app)}><Settings2 size={16} /> 返回设计</button><button className="primaryBtn" disabled={props.busyAction === "key"} onClick={() => void props.createRuntimeKey()}>{props.busyAction === "key" ? <Loader2 className="spin" size={16} /> : <Save size={16} />} 生成应用 Key</button></div></div><div className="apiDocsGrid"><aside className="designCard apiMetaCard"><h3>调用信息</h3><dl><dt>Base URL</dt><dd>{docs.baseUrl}</dd><dt>App ID</dt><dd>{app.id}</dd><dt>鉴权方式</dt><dd>Authorization: Bearer sk_xxx</dd><dt>Key Scope</dt><dd>tenant={props.session.tenantId} / workspace={props.session.workspaceId} / app={app.id}</dd></dl><Field label="Runtime API Key"><input value={props.runtimeKey} onChange={(event) => props.setRuntimeKey(event.target.value)} placeholder="sk_..." /></Field>{app.status !== "published" && <div className="warningBox"><AlertCircle size={16} /> 当前应用尚未发布，外部运行 API 只会调用已发布版本。</div>}</aside><main className="apiExampleStack"><section className="designCard"><div className="sectionTitle"><Code2 size={18} /><div><h2>{docs.primaryTitle}</h2><p>{docs.primaryDescription}</p></div></div><EndpointRow method="POST" path={docs.primaryPath} /><CodeBlock title="curl" code={docs.curl} /><CodeBlock title="JavaScript" code={docs.javascript} /><CodeBlock title="Java" code={docs.java} /><CodeBlock title="Python" code={docs.python} /></section><section className="designCard"><h3>{app.type === "workflow" ? "Workflow 等待任务与 Trace" : "Run 与 Trace 查询"}</h3>{docs.extra.map((item) => <CodeBlock key={item.title} title={item.title} code={item.code} />)}</section></main></div></section>;
 }
 
 function RunObservabilityPage(props: { apps: AppRecord[]; selectedApp?: AppRecord; selectedAppId: string; runs: RunRecord[]; traces: TraceRecord[]; selectedRun?: RunRecord; selectedRunId: string; loading: boolean; tracesLoading: boolean; error: string; refreshRuns: () => Promise<void>; selectRun: (runId: string) => void; openDesigner: (app: AppRecord) => void; openGlobal: () => void; back: () => void }) {
@@ -588,6 +1116,30 @@ function RunObservabilityPage(props: { apps: AppRecord[]; selectedApp?: AppRecor
   const avgLatency = props.runs.length ? Math.round(props.runs.reduce((sum, run) => sum + (run.latencyMs || 0), 0) / props.runs.length) : 0;
   const selectedAppRecord = props.selectedRun ? props.apps.find((app) => app.id === props.selectedRun?.appId) : undefined;
   return <section className="workspacePane runObsPane"><div className="runObsHeader"><button className="backBtn" onClick={props.back}><ArrowLeft size={17} /> 应用中心</button><div><h1>{scopeTitle}</h1><p>{props.selectedApp ? `仅查看 ${props.selectedApp.id} 的运行记录` : "跨应用查看最近运行、Trace、输入输出和错误原因"}</p></div><div className="designerActions">{props.selectedApp && <button className="ghostBtn" onClick={props.openGlobal}>全局运行</button>}<button className="ghostBtn" disabled={props.loading} onClick={() => void props.refreshRuns()}>{props.loading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />} 刷新</button>{props.selectedApp && <button className="primaryBtn" onClick={() => props.openDesigner(props.selectedApp!)}><Settings2 size={16} /> 返回设计</button>}</div></div>{props.error && <div className="errorBanner"><AlertCircle size={16} /><span>{props.error}</span><button onClick={() => void props.refreshRuns()}>重试</button></div>}<div className="runStats"><article><span>Runs</span><strong>{props.runs.length}</strong><p>最近 50 条</p></article><article><span>成功</span><strong>{successCount}</strong><p>成功完成</p></article><article><span>等待</span><strong>{waitingCount}</strong><p>人工任务</p></article><article><span>失败</span><strong>{failedCount}</strong><p>需排障</p></article><article><span>平均耗时</span><strong>{avgLatency}ms</strong><p>端到端</p></article></div>{props.loading && <StatePanel icon="loading" title="正在同步运行记录" text="正在读取当前空间的 Run、Trace 摘要和最近执行状态。" />}{!props.loading && !props.error && !props.runs.length && <StatePanel title="暂无运行记录" text="发布应用后在设计页试运行，或通过 API 调用应用，即可在这里看到 Run 和 Trace。" />}{!props.loading && props.runs.length > 0 && <div className="runObsGrid"><aside className="runListPane designCard"><div className="sectionTitle"><Play size={18} /><div><h2>Run 列表</h2><p>按创建时间倒序</p></div></div>{props.runs.map((run) => <button key={run.runId} className={`runListItem ${props.selectedRunId === run.runId ? "active" : ""}`} onClick={() => props.selectRun(run.runId)}><span className={`runStatus ${run.status}`}>{run.status}</span><strong>{run.appName}</strong><small>{run.runId}</small><em>{formatDate(run.createdAt)} · {run.latencyMs ?? 0}ms</em></button>)}</aside><main className="runDetailPane"><section className="designCard"><div className="runDetailTop"><div><h2>{props.selectedRun?.appName || "未选择 Run"}</h2><p>{props.selectedRun?.runId} · {props.selectedRun?.runType} · version {props.selectedRun?.appVersionId || "-"}</p></div>{props.selectedRun && <span className={`runStatus large ${props.selectedRun.status}`}>{props.selectedRun.status}</span>}</div>{props.selectedRun && <div className="runMetaGrid"><dl><dt>App ID</dt><dd>{props.selectedRun.appId}</dd><dt>Run Type</dt><dd>{props.selectedRun.runType}</dd><dt>Latency</dt><dd>{props.selectedRun.latencyMs ?? 0}ms</dd><dt>Tokens</dt><dd>{props.selectedRun.totalTokens ?? 0}</dd><dt>Wait Task</dt><dd>{props.selectedRun.currentWaitTaskId || "-"}</dd><dt>Created</dt><dd>{formatDate(props.selectedRun.createdAt)}</dd></dl>{selectedAppRecord && <button className="ghostBtn" onClick={() => props.openDesigner(selectedAppRecord)}><Settings2 size={16} /> 打开应用设计</button>}</div>}{props.selectedRun?.errorMessage && <div className="warningBox"><AlertCircle size={16} /> {props.selectedRun.errorMessage}</div>}<div className="ioGrid"><CodeBlock title="Run Input" code={JSON.stringify(props.selectedRun?.input || {}, null, 2)} /><CodeBlock title="Run Output" code={JSON.stringify(props.selectedRun?.output || {}, null, 2)} /></div></section><section className="designCard"><div className="sectionTitle"><Workflow size={18} /><div><h2>Trace 时间线</h2><p>{props.tracesLoading ? "正在加载 Trace" : `${props.traces.length} 个步骤`}</p></div></div>{props.tracesLoading && <StatePanel icon="loading" title="正在加载 Trace" text="正在读取节点、模型、工具或检索步骤。" />}{!props.tracesLoading && !props.traces.length && <StatePanel title="暂无 Trace" text="该 Run 尚未写入 Trace，或当前记录还在执行中。" />}{!props.tracesLoading && props.traces.map((trace, index) => <article className="traceItem" key={trace.id}><div className="traceIndex">{index + 1}</div><div className="traceBody"><div><strong>{trace.name}</strong><span className={`runStatus ${trace.status}`}>{trace.status}</span></div><p>{trace.type} · {trace.latencyMs ?? 0}ms · {formatDate(trace.createdAt)}</p>{trace.errorMessage && <div className="warningBox"><AlertCircle size={16} /> {trace.errorMessage}</div>}<div className="ioGrid compact"><CodeBlock title="Input" code={JSON.stringify(trace.input || {}, null, 2)} /><CodeBlock title="Output" code={JSON.stringify(trace.output || {}, null, 2)} /></div></div></article>)}</section></main></div>}</section>;
+}
+
+function KnowledgePage(props: { datasets: DatasetRecord[]; documents: DocumentRecord[]; retrieveRecords: RetrieveRecord[]; selectedDatasetId: string; loading: boolean; error: string; newDatasetName: string; newDocumentText: string; retrieveQuery: string; knowledgeFile: File | null; busyAction: string; setNewDatasetName: (value: string) => void; setNewDocumentText: (value: string) => void; setRetrieveQuery: (value: string) => void; setKnowledgeFile: (file: File | null) => void; refreshKnowledge: () => Promise<void>; selectDataset: (datasetId: string) => Promise<void>; createDataset: () => Promise<void>; addDocument: () => Promise<void>; uploadDocumentFile: () => Promise<void>; retrieveTest: () => Promise<void> }) {
+  const selected = props.datasets.find((dataset) => dataset.id === props.selectedDatasetId);
+  const uploadBusy = props.busyAction === "document-upload";
+  return <section className="workspacePane opsPane"><div className="pageHeader"><div><h1>知识库</h1><p>完成数据集、文件上传解析、文档写入、索引状态和检索测试闭环。</p></div><div className="headerActions"><button className="ghostBtn" disabled={props.loading} onClick={() => void props.refreshKnowledge()}>{props.loading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />} 刷新</button><button className="primaryBtn" disabled={props.busyAction === "dataset"} onClick={() => void props.createDataset()}><Database size={16} /> 创建知识库</button></div></div>{props.error && <div className="errorBanner"><AlertCircle size={16} /><span>{props.error}</span><button onClick={() => void props.refreshKnowledge()}>重试</button></div>}<div className="opsGrid"><aside className="designCard opsList"><Field label="新知识库名称"><input value={props.newDatasetName} onChange={(event) => props.setNewDatasetName(event.target.value)} /></Field>{props.datasets.map((dataset) => <button className={`runListItem ${dataset.id === props.selectedDatasetId ? "active" : ""}`} key={dataset.id} onClick={() => void props.selectDataset(dataset.id)}><span className="runStatus success">{dataset.status}</span><strong>{dataset.name}</strong><small>{dataset.id}</small><em>{dataset.chunkStrategy || "fixed"} · {formatDate(dataset.updatedAt)}</em></button>)}{!props.datasets.length && !props.loading && <StatePanel title="暂无知识库" text="输入名称并点击创建知识库，然后上传文件或添加文本文档。" />}</aside><main className="opsMain"><section className="designCard"><div className="sectionTitle"><FileText size={18} /><div><h2>{selected?.name || "选择知识库"}</h2><p>{selected ? `${selected.id} · ${props.documents.length} 个文档` : "创建或选择一个数据集后管理文档。"}</p></div></div><div className="formGrid two"><Field label="上传文件解析"><div className={`fileUploadBox uploadDropzone ${props.knowledgeFile ? "selected" : ""}`}><div className="uploadDropzoneMain"><span className="uploadIcon"><UploadCloud size={24} /></span><div><strong>{props.knowledgeFile ? props.knowledgeFile.name : "选择文本资料上传"}</strong><p>支持 txt、md、csv、json 等文本类文件，上传后自动解析为文档并生成 chunk。</p>{props.knowledgeFile && <small>{formatFileSize(props.knowledgeFile.size)} · 准备上传并索引</small>}</div></div><input id="knowledge-file-input" className="visuallyHiddenInput" type="file" accept=".txt,.md,.csv,.json,text/plain,text/markdown,application/json,text/csv" onChange={(event) => props.setKnowledgeFile(event.target.files?.[0] || null)} /><div className="uploadActions"><label className="filePickBtn" htmlFor="knowledge-file-input">选择文件</label>{props.knowledgeFile && <button className="ghostTinyBtn" disabled={uploadBusy} onClick={() => props.setKnowledgeFile(null)}>移除</button>}<button className="primaryBtn" disabled={!props.selectedDatasetId || !props.knowledgeFile || uploadBusy} onClick={() => void props.uploadDocumentFile()}>{uploadBusy ? <Loader2 className="spin" size={16} /> : <FileText size={16} />} 上传并索引</button></div></div></Field><PromptEditor title="内联文本文档" label="文本文档内容" description="适合快速录入政策、FAQ、流程说明；写入后会立刻进入轻量索引。" value={props.newDocumentText} onChange={props.setNewDocumentText} icon={<FileText size={18} />} /></div><div className="stackPanel horizontal"><button className="ghostBtn" disabled={!props.selectedDatasetId || props.busyAction === "document"} onClick={() => void props.addDocument()}>{props.busyAction === "document" ? <Loader2 className="spin" size={16} /> : <Plus size={16} />} 写入文本并索引</button><p className="mutedText">轻量索引会直接生成 chunk，可立即用于检索测试和 Agent 知识挂载。</p></div><div className="tableList">{props.documents.map((document) => <article key={document.id}><div><strong>{document.name}</strong><small>{document.id}</small></div><span className={`runStatus ${document.indexStatus === "success" ? "success" : "running"}`}>{document.indexStatus}</span><em>{document.sourceType} · {formatDate(document.updatedAt)}</em></article>)}</div></section><section className="designCard"><div className="sectionTitle"><Search size={18} /><div><h2>检索测试</h2><p>验证 TopK 命中、score 和片段内容。</p></div></div><div className="inlineForm"><input value={props.retrieveQuery} onChange={(event) => props.setRetrieveQuery(event.target.value)} placeholder="输入 query" /><button className="primaryBtn" disabled={!props.selectedDatasetId || props.busyAction === "retrieve"} onClick={() => void props.retrieveTest()}>{props.busyAction === "retrieve" ? <Loader2 className="spin" size={16} /> : <Search size={16} />} 检索</button></div><div className="resultCards">{props.retrieveRecords.map((record) => <article key={record.chunk_id}><strong>score {record.score.toFixed(2)}</strong><p>{record.content}</p><small>{record.document_id} / {record.chunk_id}</small></article>)}</div>{!props.retrieveRecords.length && <p className="mutedText">暂无命中结果，写入文档后执行检索测试。</p>}</section></main></div></section>;
+}
+
+function TaskCenterPage(props: { tasks: WaitTaskRecord[]; loading: boolean; error: string; filter: string; busyAction: string; setFilter: (value: string) => void; refreshTasks: () => Promise<void>; submitTask: (task: WaitTaskRecord, action?: string) => Promise<void> }) {
+  const pending = props.tasks.filter((task) => task.status === "pending").length;
+  return <section className="workspacePane opsPane"><div className="pageHeader"><div><h1>流程等待</h1><p>这是 Workflow 在人工确认、表单补充等节点暂停后生成的待处理项；可由业务操作员在这里提交，流程会自动恢复。</p></div><button className="ghostBtn" disabled={props.loading} onClick={() => void props.refreshTasks()}>{props.loading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />} 刷新</button></div>{props.error && <div className="errorBanner"><AlertCircle size={16} /><span>{props.error}</span><button onClick={() => void props.refreshTasks()}>重试</button></div>}<div className="runStats"><article><span>等待项</span><strong>{props.tasks.length}</strong><p>当前空间</p></article><article><span>待用户操作</span><strong>{pending}</strong><p>pending</p></article><article><span>已处理</span><strong>{props.tasks.length - pending}</strong><p>submitted/rejected</p></article><article><span>筛选</span><strong>{props.filter}</strong><p>状态过滤</p></article><article><span>用途</span><strong><Zap size={24} /></strong><p>流程恢复</p></article></div><div className="filterTabs opsFilters">{["all", "pending", "submitted", "rejected", "cancelled", "expired"].map((item) => <button key={item} className={props.filter === item ? "active" : ""} onClick={() => props.setFilter(item)}>{item}</button>)}</div>{props.loading && <StatePanel icon="loading" title="正在同步等待项" text="正在读取当前空间的流程等待任务。" />}{!props.loading && !props.tasks.length && <StatePanel title="暂无流程等待" text="运行包含人工确认节点的 Workflow 后，会在这里出现 pending 等待项；外部用户端也可以通过 API 对接处理。" />}{!props.loading && props.tasks.length > 0 && <div className="taskGrid">{props.tasks.map((task) => <article className="designCard taskCard" key={task.id}><div className="taskHeader"><span className={`runStatus ${task.status}`}>{task.status}</span><small>{formatDate(task.createdAt)}</small></div><h2>{task.title || task.nodeId}</h2><p>{task.description || "等待业务用户或操作员处理。"}</p><dl><dt>应用</dt><dd>{task.appName}</dd><dt>Run</dt><dd>{task.runId}</dd><dt>节点</dt><dd>{task.nodeId} / {task.nodeType}</dd><dt>过期</dt><dd>{formatDate(task.expiresAt)}</dd></dl><CodeBlock title="上下文" code={JSON.stringify(task.context || {}, null, 2)} />{task.status === "pending" && <div className="buttonRow"><button className="primaryBtn" disabled={props.busyAction === `wait-${task.id}`} onClick={() => void props.submitTask(task, "approve")}>{props.busyAction === `wait-${task.id}` ? <Loader2 className="spin" size={16} /> : <ClipboardCheck size={16} />} 确认继续</button><button className="dangerBtn" disabled={props.busyAction === `wait-${task.id}`} onClick={() => void props.submitTask(task, "reject")}>拒绝</button></div>}</article>)}</div>}</section>;
+}
+
+function ProviderPage(props: { providers: ProviderRecord[]; loading: boolean; error: string; form: ProviderForm; busyAction: string; setForm: (form: ProviderForm) => void; refreshProviders: () => Promise<void>; createProvider: () => Promise<void>; testProvider: (provider: ProviderRecord) => Promise<void>; disableProvider: (provider: ProviderRecord) => Promise<void> }) {
+  const activeCount = props.providers.filter((provider) => provider.status === "active").length;
+  const providerTypes = ["openai_compatible", "openai", "azure_openai", "dashscope", "deepseek", "ollama", "custom"];
+  return <section className="workspacePane opsPane"><div className="pageHeader"><div><h1>模型供应商</h1><p>配置 OpenAI Compatible、私有大模型网关或企业模型账号，供 Agent / Workflow LLM 节点使用。</p></div><button className="ghostBtn" disabled={props.loading} onClick={() => void props.refreshProviders()}>{props.loading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />} 刷新</button></div>{props.error && <div className="errorBanner"><AlertCircle size={16} /><span>{props.error}</span><button onClick={() => void props.refreshProviders()}>重试</button></div>}<div className="runStats"><article><span>供应商</span><strong>{props.providers.length}</strong><p>当前空间</p></article><article><span>Active</span><strong>{activeCount}</strong><p>可用于运行</p></article><article><span>模型选项</span><strong>{props.providers.filter((item) => item.defaultChatModel).length}</strong><p>Agent 下拉来源</p></article><article><span>密钥</span><strong>{props.providers.filter((item) => item.hasApiKey).length}</strong><p>已配置 API Key</p></article><article><span>模式</span><strong>LLM</strong><p>Chat / Embedding</p></article></div><div className="opsGrid"><aside className="designCard opsList"><div className="sectionTitle"><Settings2 size={18} /><div><h2>新增供应商</h2><p>API Key 只写入后端，不会在列表中回显。</p></div></div><Field label="名称"><input value={props.form.name} onChange={(event) => props.setForm({ ...props.form, name: event.target.value })} /></Field><Field label="类型"><select value={props.form.providerType} onChange={(event) => props.setForm({ ...props.form, providerType: event.target.value })}>{providerTypes.map((type) => <option key={type} value={type}>{type}</option>)}</select></Field><Field label="Base URL"><input value={props.form.baseUrl} onChange={(event) => props.setForm({ ...props.form, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" /></Field><Field label="API Key"><input type="password" value={props.form.apiKey} onChange={(event) => props.setForm({ ...props.form, apiKey: event.target.value })} placeholder="sk-..." /></Field><Field label="默认 Chat Model"><input value={props.form.defaultChatModel} onChange={(event) => props.setForm({ ...props.form, defaultChatModel: event.target.value })} /></Field><Field label="默认 Embedding Model"><input value={props.form.defaultEmbeddingModel} onChange={(event) => props.setForm({ ...props.form, defaultEmbeddingModel: event.target.value })} /></Field><Field label="扩展配置 JSON"><textarea value={props.form.configJson} onChange={(event) => props.setForm({ ...props.form, configJson: event.target.value })} /></Field><button className="primaryBtn" disabled={props.busyAction === "provider-create"} onClick={() => void props.createProvider()}>{props.busyAction === "provider-create" ? <Loader2 className="spin" size={16} /> : <Save size={16} />} 保存供应商</button></aside><main className="opsMain"><section className="designCard"><div className="sectionTitle"><Bot size={18} /><div><h2>供应商账号</h2><p>模型配置入口已接入后端 Provider API。</p></div></div>{props.loading && <StatePanel icon="loading" title="正在同步供应商" text="正在读取当前空间的模型供应商账号。" />}{!props.loading && !props.providers.length && <StatePanel title="暂无模型供应商" text="先在左侧保存一个 OpenAI Compatible 或企业模型网关账号。" />}{!props.loading && props.providers.length > 0 && <div className="tableList providerList">{props.providers.map((provider) => <article key={provider.id}><div><strong>{provider.name}</strong><small>{provider.providerType} · {provider.baseUrl}</small><small>Chat: {provider.defaultChatModel || "-"} · Embedding: {provider.defaultEmbeddingModel || "-"}</small></div><span className={`runStatus ${provider.status === "active" ? "success" : "cancelled"}`}>{provider.status}</span><em>{provider.hasApiKey ? "已配置 Key" : "未配置 Key"}</em><div className="buttonRow"><button className="ghostBtn" disabled={!!props.busyAction} onClick={() => void props.testProvider(provider)}>{props.busyAction === `provider-test-${provider.id}` ? <Loader2 className="spin" size={16} /> : <Play size={16} />} 测试</button><button className="dangerBtn" disabled={!!props.busyAction || provider.status !== "active"} onClick={() => void props.disableProvider(provider)}>禁用</button></div></article>)}</div>}</section></main></div></section>;
+}
+
+function OrgOpsPage(props: { tenants: TenantRecord[]; workspaces: WorkspaceRecord[]; apiKeys: ApiKeyRecord[]; usage: UsageSummary | null; auditEvents: AuditEvent[]; session: AuthSession; loading: boolean; error: string; refreshOrg: () => Promise<void> }) {
+  const usage = props.usage;
+  const roleLabel = props.session.role === "admin" || (!props.session.role && props.session.userId === "admin") ? "管理员" : "成员";
+  const activeKeys = props.apiKeys.filter((key) => key.status === "active").length;
+  return <section className="workspacePane orgPane"><div className="pageHeader"><div><h1>组织运营</h1><p>用于确认当前空间的权限边界、资源消耗、集成凭据和最近关键操作。</p></div><button className="ghostBtn" disabled={props.loading} onClick={() => void props.refreshOrg()}>{props.loading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />} 刷新</button></div>{props.error && <div className="errorBanner"><AlertCircle size={16} /><span>{props.error}</span><button onClick={() => void props.refreshOrg()}>重试</button></div>}<div className="orgHero"><div className="orgHeroText"><span><Building2 size={18} /> 当前组织上下文</span><h2>{props.session.tenantId} / {props.session.workspaceId}</h2><p>这里不是业务配置入口，而是管理员看“谁在什么空间、用了多少、开放了哪些 Key、最近做了什么”的运营视图。</p></div><div className="orgHeroCards"><article><small>账号角色</small><strong>{roleLabel}</strong><p>{props.session.displayName || props.session.userId}</p></article><article><small>可见空间</small><strong>{props.workspaces.length}</strong><p>{roleLabel === "管理员" ? "管理员可查看全部授权空间" : "成员仅查看授权空间"}</p></article><article><small>活跃 Key</small><strong>{activeKeys}</strong><p>外部系统调用 Runtime API 的凭据</p></article></div></div><div className="orgKpiGrid"><article><span>应用总数</span><strong>{usage?.applications ?? 0}</strong><p>已发布 {usage?.publishedApps ?? 0}</p></article><article><span>知识资产</span><strong>{usage?.datasets ?? 0}</strong><p>文档 {usage?.documents ?? 0}</p></article><article><span>运行次数</span><strong>{usage?.runs ?? 0}</strong><p>失败 {usage?.failedRuns ?? 0} · 等待 {usage?.waitingRuns ?? 0}</p></article><article><span>等待任务</span><strong>{usage?.pendingWaitTasks ?? 0}</strong><p>待处理 / 总计 {usage?.waitTasks ?? 0}</p></article><article><span>Token</span><strong>{usage?.totalTokens ?? 0}</strong><p>累计消耗</p></article><article><span>平均耗时</span><strong>{usage?.averageLatencyMs ?? 0}ms</strong><p>端到端运行</p></article></div><div className="orgPanelGrid"><section className="designCard"><div className="sectionTitle"><ShieldCheck size={18} /><div><h2>空间与权限边界</h2><p>应用、知识库、模型供应商、Key 和运行记录都按 workspace 隔离。</p></div></div><div className="scopeStack">{props.tenants.map((tenant) => <article key={tenant.id} className="scopeItem tenant"><div><strong>{tenant.name}</strong><small>{tenant.code} · {tenant.plan}</small></div><span className="runStatus success">{tenant.status}</span></article>)}{props.workspaces.map((workspace) => <article key={workspace.id} className={`scopeItem ${workspace.id === props.session.workspaceId ? "active" : ""}`}><div><strong>{workspace.name || workspace.id}</strong><small>{workspace.tenantId}</small></div><span>{workspace.id === props.session.workspaceId ? "当前空间" : workspace.status}</span></article>)}</div></section><section className="designCard"><div className="sectionTitle"><Code2 size={18} /><div><h2>API Key 与集成范围</h2><p>外部系统通过这些 Key 调用 Runtime API；明文只在创建时返回。</p></div></div><div className="keyList">{props.apiKeys.map((key) => <article key={key.id}><div><strong>{key.name}</strong><small>{key.keyPrefix}*** · {key.appId ? "应用级" : "空间级"}</small></div><span className={`runStatus ${key.status === "active" ? "success" : "cancelled"}`}>{key.status}</span><em>{key.appId || key.workspaceId || props.session.workspaceId}</em></article>)}{!props.apiKeys.length && <StatePanel title="暂无 API Key" text="在应用 API 文档或设计页生成 Key 后，会在这里看到 scope 和状态。" />}</div></section><section className="designCard orgAuditCard"><div className="sectionTitle"><ClipboardCheck size={18} /><div><h2>最近审计事件</h2><p>追踪发布、Key 创建、知识索引等会影响运行的操作。</p></div></div><div className="auditTimeline">{props.auditEvents.map((event) => <article key={`${event.type}-${event.id}`}><span>{event.type}</span><strong>{event.title}</strong><p>{event.detail}</p><small>{event.actor} · {event.target} · {formatDate(event.createdAt)}</small></article>)}</div>{!props.auditEvents.length && <StatePanel title="暂无审计事件" text="发布应用、创建 Key 或写入知识文档后会生成审计摘要。" />}</section></div></section>;
 }
 
 function EndpointRow({ method, path }: { method: string; path: string }) {
@@ -607,26 +1159,25 @@ function StatePanel({ icon = "empty", title, text }: { icon?: "empty" | "loading
   return <div className="statePanel">{icon === "loading" ? <Loader2 className="spin" size={28} /> : <Boxes size={28} />}<strong>{title}</strong><span>{text}</span></div>;
 }
 
-function AgentDesigner({ draft, setDraft, runResult, runtimeKey, setRuntimeKey }: { draft: AgentDraft; setDraft: (draft: AgentDraft) => void; runResult: Record<string, unknown> | null; runtimeKey: string; setRuntimeKey: (value: string) => void }) {
-  const mode = agentModes.find((item) => item.mode === draft.mode) || agentModes[0];
+function AgentDesigner({ draft, setDraft, modelOptions, runResult, runtimeKey, setRuntimeKey }: { draft: AgentDraft; setDraft: (draft: AgentDraft) => void; modelOptions: string[]; runResult: Record<string, unknown> | null; runtimeKey: string; setRuntimeKey: (value: string) => void }) {
+  const mode = agentModes[0];
   const definition = buildAgentDefinition(draft);
-  return <div className="agentLayout"><aside className="agentModeRail">{agentModes.map((item) => <button key={item.mode} className={draft.mode === item.mode ? "active" : ""} onClick={() => setDraft({ ...draft, mode: item.mode })}><item.icon size={18} /><span>{item.typeLabel}</span></button>)}</aside><section className="designCard mainDesignCard"><div className="sectionTitle"><mode.icon size={20} /><div><h2>{mode.typeLabel}设计</h2><p>{mode.description}</p></div></div><div className="formGrid two"><Field label="模型"><input value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })} /></Field><Field label="Temperature"><input type="number" min="0" max="2" step="0.1" value={draft.temperature} onChange={(event) => setDraft({ ...draft, temperature: Number(event.target.value) })} /></Field></div>{draft.mode === "chat-assistant" && <ChatAssistantForm draft={draft} setDraft={setDraft} />}{draft.mode === "agent" && <AutonomousAgentForm draft={draft} setDraft={setDraft} />}{draft.mode === "text-generation" && <TextGenerationForm draft={draft} setDraft={setDraft} />}</section><aside className="previewStack"><section className="designCard compact"><h3>Runtime Key</h3><input value={runtimeKey} onChange={(event) => setRuntimeKey(event.target.value)} placeholder="sk_..." /></section><section className="designCard preview"><h3>Definition</h3><pre>{JSON.stringify(definition, null, 2)}</pre></section><section className="designCard preview"><h3>Run Result</h3><pre>{JSON.stringify(runResult || { hint: "发布后可生成 Key 并试运行。" }, null, 2)}</pre></section></aside></div>;
-}
-
-function ChatAssistantForm({ draft, setDraft }: { draft: AgentDraft; setDraft: (draft: AgentDraft) => void }) {
-  return <><Field label="开场白"><input value={draft.opening} onChange={(event) => setDraft({ ...draft, opening: event.target.value })} /></Field><Field label="系统提示词"><textarea value={draft.system} onChange={(event) => setDraft({ ...draft, system: event.target.value })} /></Field></>;
+  const options = modelOptions.includes(draft.model) ? modelOptions : [draft.model, ...modelOptions].filter(Boolean);
+  return <div className="agentLayout"><section className="designCard mainDesignCard"><div className="sectionTitle"><mode.icon size={20} /><div><h2>{mode.typeLabel}设计</h2><p>{mode.description}</p></div></div><div className="formGrid two"><Field label="模型"><select value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })}>{options.map((model) => <option key={model} value={model}>{model}</option>)}</select></Field><Field label="Temperature"><input type="number" min="0" max="2" step="0.1" value={draft.temperature} onChange={(event) => setDraft({ ...draft, temperature: Number(event.target.value) })} /></Field></div><AutonomousAgentForm draft={draft} setDraft={setDraft} /><Field label="开场白"><input value={draft.opening} onChange={(event) => setDraft({ ...draft, opening: event.target.value })} /></Field></section><aside className="previewStack"><section className="designCard compact"><h3>Runtime Key</h3><input value={runtimeKey} onChange={(event) => setRuntimeKey(event.target.value)} placeholder="sk_..." /></section><section className="designCard preview"><h3>Definition</h3><pre>{JSON.stringify(definition, null, 2)}</pre></section><section className="designCard preview"><h3>Run Result</h3><pre>{JSON.stringify(runResult || { hint: "发布后可生成 Key 并试运行。" }, null, 2)}</pre></section></aside></div>;
 }
 
 function AutonomousAgentForm({ draft, setDraft }: { draft: AgentDraft; setDraft: (draft: AgentDraft) => void }) {
-  return <><Field label="Agent 规划策略"><textarea value={draft.toolPlan} onChange={(event) => setDraft({ ...draft, toolPlan: event.target.value })} /></Field><Field label="角色与约束"><textarea value={draft.system} onChange={(event) => setDraft({ ...draft, system: event.target.value })} /></Field></>;
+  return <><PromptEditor title="Agent 规划策略" label="策略提示" description="描述 Agent 如何拆解任务、选择工具、检索知识和组织回答。" value={draft.toolPlan} onChange={(value) => setDraft({ ...draft, toolPlan: value })} icon={<Workflow size={18} />} /><PromptEditor title="角色与约束" label="系统提示" description="定义角色边界、语气、安全约束和输出要求，会写入发布定义。" value={draft.system} onChange={(value) => setDraft({ ...draft, system: value })} icon={<Bot size={18} />} /></>;
 }
 
-function TextGenerationForm({ draft, setDraft }: { draft: AgentDraft; setDraft: (draft: AgentDraft) => void }) {
-  return <><Field label="生成模板"><textarea value={draft.textTemplate} onChange={(event) => setDraft({ ...draft, textTemplate: event.target.value })} /></Field><Field label="写作规范"><textarea value={draft.system} onChange={(event) => setDraft({ ...draft, system: event.target.value })} /></Field></>;
+function PromptEditor({ title, label, description, value, onChange, icon }: { title: string; label: string; description: string; value: string; onChange: (value: string) => void; icon: React.ReactNode }) {
+  const lineCount = value ? value.split(/\r?\n/).length : 0;
+  const charCount = value.trim().length;
+  return <section className="promptEditor"><div className="promptEditorHeader"><span className="promptEditorIcon">{icon}</span><div><small>{label}</small><strong>{title}</strong><p>{description}</p></div><em>{lineCount} 行 · {charCount} 字</em></div><textarea value={value} onChange={(event) => onChange(event.target.value)} /></section>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="field"><span>{label}</span>{children}</label>;
+  return <div className="field"><span>{label}</span>{children}</div>;
 }
 
 type WorkflowDesignerProps = {
@@ -657,7 +1208,7 @@ function WorkflowDesigner(props: WorkflowDesignerProps) {
 }
 
 function buildAgentDefinition(draft: AgentDraft) {
-  return { type: "agent", agentMode: draft.mode, model: { chatModel: draft.model, temperature: draft.temperature, maxTokens: 1024 }, prompt: { system: draft.mode === "text-generation" ? `${draft.system}\n\n模板：${draft.textTemplate}` : draft.system }, knowledge: [], tools: [], memory: { enabled: draft.mode !== "text-generation", windowMessages: 10 }, output: { format: draft.mode === "text-generation" ? "structured_text" : "text" }, ui: { opening: draft.opening, toolPlan: draft.toolPlan, textTemplate: draft.textTemplate } };
+  return { type: "agent", agentMode: draft.mode, model: { chatModel: draft.model, temperature: draft.temperature, maxTokens: 1024 }, prompt: { system: draft.system }, knowledge: [], tools: [], memory: { enabled: true, windowMessages: 10 }, output: { format: "text" }, ui: { opening: draft.opening, toolPlan: draft.toolPlan } };
 }
 
 function buildWorkflowDefinition(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
@@ -672,7 +1223,7 @@ function restoreWorkflowDefinition(definition: Record<string, any>): { nodes: Wo
 }
 
 function normalizeAgentMode(mode: unknown): AgentMode {
-  return mode === "agent" || mode === "text-generation" || mode === "chat-assistant" ? mode : "chat-assistant";
+  return mode === "agent" ? "agent" : "agent";
 }
 
 function normalizeNodeType(type: unknown): WorkflowNodeType {
@@ -721,9 +1272,21 @@ function formatDate(value?: string) {
   }
 }
 
+function formatFileSize(size: number) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
 function parseRoute(): RouteState {
   const hash = window.location.hash.replace(/^#/, "") || "/apps";
+  if (hash === "/knowledge") return { view: "knowledge" };
+  if (hash === "/tasks") return { view: "tasks" };
+  if (hash === "/providers") return { view: "providers" };
+  if (hash === "/org") return { view: "org" };
   if (hash === "/observability/runs") return { view: "observability" };
+  const experienceMatch = hash.match(/^\/apps\/([^/]+)\/experience$/);
+  if (experienceMatch?.[1]) return { view: "experience", appId: decodeURIComponent(experienceMatch[1]) };
   const apiMatch = hash.match(/^\/apps\/([^/]+)\/api$/);
   if (apiMatch?.[1]) return { view: "api", appId: decodeURIComponent(apiMatch[1]) };
   const runsMatch = hash.match(/^\/apps\/([^/]+)\/runs$/);
@@ -748,9 +1311,72 @@ function navigateApiDocs(app: AppRecord) {
   if (window.location.hash !== nextHash) window.location.hash = nextHash;
 }
 
+function navigateExperience(app: AppRecord) {
+  const nextHash = `#/apps/${encodeURIComponent(app.id)}/experience`;
+  if (window.location.hash !== nextHash) window.location.hash = nextHash;
+}
+
 function navigateObservability(app?: AppRecord) {
   const nextHash = app ? `#/apps/${encodeURIComponent(app.id)}/runs` : "#/observability/runs";
   if (window.location.hash !== nextHash) window.location.hash = nextHash;
+}
+
+function navigateKnowledge() {
+  if (window.location.hash !== "#/knowledge") window.location.hash = "#/knowledge";
+}
+
+function navigateProviders() {
+  if (window.location.hash !== "#/providers") window.location.hash = "#/providers";
+}
+
+function navigateOrg() {
+  if (window.location.hash !== "#/org") window.location.hash = "#/org";
+}
+
+function runtimeOutputText(outputs?: Record<string, unknown>, status = "success") {
+  if (!outputs || !Object.keys(outputs).length) return status === "success" ? "流程已完成。" : `运行状态：${status}`;
+  const answer = outputs.answer;
+  if (typeof answer === "string" && answer.trim()) return answer;
+  const text = outputs.outputs || outputs.text || outputs.output || outputs.result;
+  if (typeof text === "string" && text.trim()) return text;
+  return JSON.stringify(outputs, null, 2);
+}
+
+function waitTaskActions(task: RuntimeWaitTask) {
+  const raw = task.actions;
+  if (Array.isArray(raw)) {
+    const actions = raw.map((item) => {
+      if (typeof item === "string") return { key: item, label: item };
+      if (item && typeof item === "object") {
+        const record = item as Record<string, unknown>;
+        const key = String(record.key || record.value || record.action || "approve");
+        return { key, label: String(record.label || record.name || key) };
+      }
+      return null;
+    }).filter((item): item is { key: string; label: string } => !!item);
+    if (actions.length) return actions;
+  }
+  return [{ key: "approve", label: "确认继续" }, { key: "reject", label: "拒绝" }];
+}
+
+function readStoredConsoleSession(): AuthSession | null {
+  try {
+    const raw = localStorage.getItem("aio.consoleSession");
+    if (!raw) return null;
+    const session = JSON.parse(raw) as AuthSession;
+    if (!session.token || session.expiresAt * 1000 < Date.now()) {
+      clearStoredConsoleSession();
+      return null;
+    }
+    return session;
+  } catch {
+    clearStoredConsoleSession();
+    return null;
+  }
+}
+
+function clearStoredConsoleSession() {
+  localStorage.removeItem("aio.consoleSession");
 }
 
 function safeJsonParse(text: string) {

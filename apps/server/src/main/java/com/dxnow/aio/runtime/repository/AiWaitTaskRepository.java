@@ -9,5 +9,7 @@ public interface AiWaitTaskRepository extends JpaRepository<AiWaitTask, String> 
 
   Optional<AiWaitTask> findByTenantIdAndId(String tenantId, String id);
 
+  List<AiWaitTask> findByTenantIdAndWorkspaceIdOrderByCreatedAtDesc(String tenantId, String workspaceId);
+
   List<AiWaitTask> findByTenantIdAndRunIdOrderByCreatedAtDesc(String tenantId, String runId);
 }

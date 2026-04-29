@@ -4,18 +4,21 @@ import com.dxnow.aio.identity.domain.ApiKey;
 import com.dxnow.aio.identity.domain.Tenant;
 import com.dxnow.aio.identity.domain.Workspace;
 import com.dxnow.aio.identity.service.IdentityService;
+import com.dxnow.aio.security.ConsoleAuthService;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 import javax.validation.Valid;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.Size;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -23,9 +26,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminIdentityController {
 
   private final IdentityService identityService;
+  private final ConsoleAuthService authService;
 
-  public AdminIdentityController(IdentityService identityService) {
+  public AdminIdentityController(IdentityService identityService, ConsoleAuthService authService) {
     this.identityService = identityService;
+    this.authService = authService;
   }
 
   @GetMapping("/tenants")
@@ -42,8 +47,16 @@ public class AdminIdentityController {
 
   @GetMapping("/workspaces")
   public List<WorkspaceResponse> listWorkspaces(
-      @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId) {
-    return identityService.listWorkspaces(tenantId).stream()
+      @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
+      @RequestHeader(value = "X-Aio-User", required = false) String userId) {
+    List<Workspace> workspaces = identityService.listWorkspaces(tenantId);
+    if (!authService.isWorkspaceAdmin(userId)) {
+      List<String> allowedWorkspaceIds = authService.allowedWorkspaceIds(userId);
+      workspaces = workspaces.stream()
+          .filter(workspace -> allowedWorkspaceIds.contains(workspace.getId()))
+          .collect(Collectors.toList());
+    }
+    return workspaces.stream()
         .map(WorkspaceResponse::from)
         .collect(Collectors.toList());
   }
@@ -51,7 +64,11 @@ public class AdminIdentityController {
   @PostMapping("/workspaces")
   public WorkspaceResponse createWorkspace(
       @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
+      @RequestHeader(value = "X-Aio-User", required = false) String userId,
       @Valid @RequestBody CreateWorkspaceRequest request) {
+    if (!authService.isWorkspaceAdmin(userId)) {
+      throw new ForbiddenException();
+    }
     return WorkspaceResponse.from(identityService.createWorkspace(tenantId, request.name));
   }
 
@@ -213,5 +230,9 @@ public class AdminIdentityController {
       response.apiKey = secret;
       return response;
     }
+  }
+
+  @ResponseStatus(HttpStatus.FORBIDDEN)
+  public static class ForbiddenException extends RuntimeException {
   }
 }
