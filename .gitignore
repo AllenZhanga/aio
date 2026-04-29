@@ -38,6 +38,7 @@ target/
 .next/
 .nuxt/
 coverage/
+*.tsbuildinfo
 
 # IDE and OS files
 .idea/
