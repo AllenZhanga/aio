@@ -7,6 +7,7 @@ import com.dxnow.aio.security.ApiKeyPrincipal;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @RestController
 @RequestMapping("/v1")
@@ -28,11 +30,42 @@ public class RuntimeAppController {
   }
 
   @PostMapping("/apps/{appId}/chat")
-  public Map<String, Object> chat(
+  public Object chat(
       HttpServletRequest servletRequest,
       @PathVariable String appId,
       @RequestBody Map<String, Object> request) {
-    AiRun run = runtimeService.chat(principal(servletRequest), appId, request);
+    ApiKeyPrincipal principal = principal(servletRequest);
+    if (Boolean.TRUE.equals(request.get("stream"))) {
+      return streamChat(principal, appId, request);
+    }
+    AiRun run = runtimeService.chat(principal, appId, request);
+    return chatResponse(run);
+  }
+
+  private SseEmitter streamChat(ApiKeyPrincipal principal, String appId, Map<String, Object> request) {
+    SseEmitter emitter = new SseEmitter(180000L);
+    CompletableFuture.runAsync(() -> {
+      try {
+        emitter.send(SseEmitter.event().name("run_started").data(Map.of("app_id", appId)));
+        AiRun run = runtimeService.chat(principal, appId, request);
+        Map<String, Object> response = chatResponse(run);
+        Object answer = response.get("answer");
+        emitter.send(SseEmitter.event().name("message").data(Map.of("answer", answer == null ? "" : answer)));
+        emitter.send(SseEmitter.event().name("run_completed").data(response));
+        emitter.complete();
+      } catch (Exception exception) {
+        try {
+          String message = exception.getMessage() == null ? "Streaming chat failed" : exception.getMessage();
+          emitter.send(SseEmitter.event().name("error").data(Map.of("message", message)));
+        } catch (Exception ignored) {
+        }
+        emitter.completeWithError(exception);
+      }
+    });
+    return emitter;
+  }
+
+  private Map<String, Object> chatResponse(AiRun run) {
     Map<String, Object> response = new LinkedHashMap<>();
     response.put("run_id", run.getId());
     response.put("status", run.getStatus());

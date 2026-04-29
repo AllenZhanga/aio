@@ -32,6 +32,33 @@ public class ModelProviderAccount {
   @Column(name = "api_key_ciphertext")
   private String apiKeyCiphertext;
 
+  private String llmBaseUrl;
+
+  @Column(name = "llm_api_key_ciphertext")
+  private String llmApiKeyCiphertext;
+
+  private String llmModel;
+
+  private String llmConfigJson;
+
+  private String embeddingBaseUrl;
+
+  @Column(name = "embedding_api_key_ciphertext")
+  private String embeddingApiKeyCiphertext;
+
+  private String embeddingModel;
+
+  private String embeddingConfigJson;
+
+  private String rerankBaseUrl;
+
+  @Column(name = "rerank_api_key_ciphertext")
+  private String rerankApiKeyCiphertext;
+
+  private String rerankModel;
+
+  private String rerankConfigJson;
+
   private String defaultChatModel;
 
   private String defaultEmbeddingModel;
@@ -113,6 +140,118 @@ public class ModelProviderAccount {
 
   public void setApiKeyCiphertext(String apiKeyCiphertext) {
     this.apiKeyCiphertext = apiKeyCiphertext;
+  }
+
+  public String getLlmBaseUrl() {
+    return llmBaseUrl;
+  }
+
+  public void setLlmBaseUrl(String llmBaseUrl) {
+    this.llmBaseUrl = llmBaseUrl;
+  }
+
+  public String getLlmApiKeyCiphertext() {
+    return llmApiKeyCiphertext;
+  }
+
+  public void setLlmApiKeyCiphertext(String llmApiKeyCiphertext) {
+    this.llmApiKeyCiphertext = llmApiKeyCiphertext;
+  }
+
+  public String getLlmModel() {
+    return llmModel;
+  }
+
+  public void setLlmModel(String llmModel) {
+    this.llmModel = llmModel;
+  }
+
+  public String getLlmConfigJson() {
+    return llmConfigJson;
+  }
+
+  public void setLlmConfigJson(String llmConfigJson) {
+    this.llmConfigJson = llmConfigJson;
+  }
+
+  public String getEmbeddingBaseUrl() {
+    return embeddingBaseUrl;
+  }
+
+  public void setEmbeddingBaseUrl(String embeddingBaseUrl) {
+    this.embeddingBaseUrl = embeddingBaseUrl;
+  }
+
+  public String getEmbeddingApiKeyCiphertext() {
+    return embeddingApiKeyCiphertext;
+  }
+
+  public void setEmbeddingApiKeyCiphertext(String embeddingApiKeyCiphertext) {
+    this.embeddingApiKeyCiphertext = embeddingApiKeyCiphertext;
+  }
+
+  public String getEmbeddingModel() {
+    return embeddingModel;
+  }
+
+  public void setEmbeddingModel(String embeddingModel) {
+    this.embeddingModel = embeddingModel;
+  }
+
+  public String getEmbeddingConfigJson() {
+    return embeddingConfigJson;
+  }
+
+  public void setEmbeddingConfigJson(String embeddingConfigJson) {
+    this.embeddingConfigJson = embeddingConfigJson;
+  }
+
+  public String getRerankBaseUrl() {
+    return rerankBaseUrl;
+  }
+
+  public void setRerankBaseUrl(String rerankBaseUrl) {
+    this.rerankBaseUrl = rerankBaseUrl;
+  }
+
+  public String getRerankApiKeyCiphertext() {
+    return rerankApiKeyCiphertext;
+  }
+
+  public void setRerankApiKeyCiphertext(String rerankApiKeyCiphertext) {
+    this.rerankApiKeyCiphertext = rerankApiKeyCiphertext;
+  }
+
+  public String getRerankModel() {
+    return rerankModel;
+  }
+
+  public void setRerankModel(String rerankModel) {
+    this.rerankModel = rerankModel;
+  }
+
+  public String getRerankConfigJson() {
+    return rerankConfigJson;
+  }
+
+  public void setRerankConfigJson(String rerankConfigJson) {
+    this.rerankConfigJson = rerankConfigJson;
+  }
+
+  public String effectiveLlmBaseUrl() {
+    return llmBaseUrl == null || llmBaseUrl.isBlank() ? baseUrl : llmBaseUrl;
+  }
+
+  public String effectiveLlmApiKeyCiphertext() {
+    return llmApiKeyCiphertext == null || llmApiKeyCiphertext.isBlank() ? apiKeyCiphertext : llmApiKeyCiphertext;
+  }
+
+  public String effectiveLlmModel() {
+    return llmModel == null || llmModel.isBlank() ? defaultChatModel : llmModel;
+  }
+
+  public String effectiveEmbeddingModel() {
+    return embeddingModel == null || embeddingModel.isBlank() ? defaultEmbeddingModel : embeddingModel;
   }
 
   public String getDefaultChatModel() {

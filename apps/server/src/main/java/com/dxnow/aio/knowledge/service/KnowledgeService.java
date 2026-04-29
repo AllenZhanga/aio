@@ -66,9 +66,22 @@ public class KnowledgeService {
     return datasetRepository.save(dataset);
   }
 
+  @Transactional
+  public void deleteDataset(String tenantId, String datasetId) {
+    KbDataset dataset = getDataset(tenantId, datasetId);
+    chunkRepository.deleteByTenantIdAndDatasetId(tenantId, dataset.getId());
+    documentRepository.deleteByTenantIdAndDatasetId(tenantId, dataset.getId());
+    datasetRepository.delete(dataset);
+  }
+
   public List<KbDocument> listDocuments(String tenantId, String datasetId) {
     getDataset(tenantId, datasetId);
     return documentRepository.findByTenantIdAndDatasetIdOrderByCreatedAtDesc(tenantId, datasetId);
+  }
+
+  public KbDocument getDocument(String tenantId, String documentId) {
+    return documentRepository.findByTenantIdAndId(tenantId, documentId)
+        .orElseThrow(() -> new EntityNotFoundException("Document not found"));
   }
 
   @Transactional
@@ -120,7 +133,7 @@ public class KnowledgeService {
   @Transactional
   protected void indexDocument(KbDocument document) {
     chunkRepository.deleteByTenantIdAndDocumentId(document.getTenantId(), document.getId());
-    List<String> chunks = chunkText(document.getContentText());
+    List<String> chunks = chunkText(document.getContentText(), document.getSourceType());
     int index = 0;
     for (String content : chunks) {
       KbChunk chunk = new KbChunk();
@@ -162,12 +175,26 @@ public class KnowledgeService {
     return record;
   }
 
-  private List<String> chunkText(String text) {
+  private List<String> chunkText(String text, String sourceType) {
     String source = text == null ? "" : text.trim();
     List<String> chunks = new ArrayList<>();
     if (source.isBlank()) {
       chunks.add("");
       return chunks;
+    }
+    if ("text:raw".equals(sourceType) || "text:single".equals(sourceType)) {
+      chunks.add(source);
+      return chunks;
+    }
+    if ("text:paragraph".equals(sourceType) || "text:qa".equals(sourceType)) {
+      for (String paragraph : source.split("\\n\\s*\\n")) {
+        if (!paragraph.isBlank()) {
+          chunks.add(paragraph.trim());
+        }
+      }
+      if (!chunks.isEmpty()) {
+        return chunks;
+      }
     }
     String[] paragraphs = source.split("\\n\\s*\\n");
     StringBuilder current = new StringBuilder();

@@ -10,4 +10,6 @@ public interface KbDocumentRepository extends JpaRepository<KbDocument, String> 
   List<KbDocument> findByTenantIdAndDatasetIdOrderByCreatedAtDesc(String tenantId, String datasetId);
 
   Optional<KbDocument> findByTenantIdAndId(String tenantId, String id);
+
+  void deleteByTenantIdAndDatasetId(String tenantId, String datasetId);
 }

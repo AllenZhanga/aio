@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 import javax.validation.Valid;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.Size;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -55,6 +56,13 @@ public class AdminKnowledgeController {
     return DatasetResponse.from(knowledgeService.getDataset(tenantId, datasetId));
   }
 
+  @DeleteMapping("/datasets/{datasetId}")
+  public void deleteDataset(
+      @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
+      @PathVariable String datasetId) {
+    knowledgeService.deleteDataset(tenantId, datasetId);
+  }
+
   @PostMapping("/datasets/{datasetId}/documents")
   public DocumentResponse addDocument(
       @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
@@ -80,6 +88,13 @@ public class AdminKnowledgeController {
       @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
       @PathVariable String datasetId) {
     return knowledgeService.listDocuments(tenantId, datasetId).stream().map(DocumentResponse::from).collect(Collectors.toList());
+  }
+
+  @GetMapping("/documents/{documentId}")
+  public DocumentResponse getDocument(
+      @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
+      @PathVariable String documentId) {
+    return DocumentResponse.from(knowledgeService.getDocument(tenantId, documentId));
   }
 
   @PostMapping("/documents/{documentId}/reindex")
@@ -181,6 +196,7 @@ public class AdminKnowledgeController {
     public String name;
     public String sourceType;
     public String objectKey;
+    public String contentText;
     public String parseStatus;
     public String indexStatus;
     public String errorMessage;
@@ -194,6 +210,7 @@ public class AdminKnowledgeController {
       response.name = document.getName();
       response.sourceType = document.getSourceType();
       response.objectKey = document.getObjectKey();
+      response.contentText = document.getContentText();
       response.parseStatus = document.getParseStatus();
       response.indexStatus = document.getIndexStatus();
       response.errorMessage = document.getErrorMessage();

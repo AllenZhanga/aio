@@ -58,6 +58,10 @@ public class IdentityService {
     return workspaceRepository.findByTenantIdOrderByCreatedAtDesc(tenantId);
   }
 
+  public List<Workspace> listAllWorkspaces() {
+    return workspaceRepository.findByStatusOrderByCreatedAtDesc("active");
+  }
+
   @Transactional
   public Workspace createWorkspace(String tenantId, String name) {
     requireTenant(tenantId);

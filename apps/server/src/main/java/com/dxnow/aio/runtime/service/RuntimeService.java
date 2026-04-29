@@ -5,7 +5,7 @@ import com.dxnow.aio.app.domain.AiAppVersion;
 import com.dxnow.aio.app.repository.AiAppRepository;
 import com.dxnow.aio.app.repository.AiAppVersionRepository;
 import com.dxnow.aio.common.Ids;
-import com.dxnow.aio.common.SecretCrypto;
+import com.dxnow.aio.common.CryptoService;
 import com.dxnow.aio.common.Sha256;
 import com.dxnow.aio.config.AioProperties;
 import com.dxnow.aio.knowledge.service.KnowledgeService;
@@ -57,7 +57,7 @@ public class RuntimeService {
   private final AiToolRepository toolRepository;
   private final KnowledgeService knowledgeService;
   private final ToolService toolService;
-  private final SecretCrypto secretCrypto;
+  private final CryptoService cryptoService;
   private final AioProperties properties;
   private final ObjectMapper objectMapper;
   private final RestTemplate restTemplate = new RestTemplate();
@@ -72,7 +72,7 @@ public class RuntimeService {
       AiToolRepository toolRepository,
       KnowledgeService knowledgeService,
       ToolService toolService,
-      SecretCrypto secretCrypto,
+      CryptoService cryptoService,
       AioProperties properties,
       ObjectMapper objectMapper) {
     this.appRepository = appRepository;
@@ -84,7 +84,7 @@ public class RuntimeService {
     this.toolRepository = toolRepository;
     this.knowledgeService = knowledgeService;
     this.toolService = toolService;
-    this.secretCrypto = secretCrypto;
+    this.cryptoService = cryptoService;
     this.properties = properties;
     this.objectMapper = objectMapper;
   }
@@ -256,8 +256,13 @@ public class RuntimeService {
     llmInput.put("system", system);
     llmInput.put("query", query);
     llmInput.put("model", model);
+    llmInput.put("knowledge", retrieved);
     LlmResult llm = callChatModel(app.getTenantId(), model, system, query);
-    createTrace(run, "llm", "agent.chat", llmInput, Collections.singletonMap("answer", llm.answer), "success", llm.latencyMs, llm.usage, null);
+    llmInput.put("provider_request", llm.request);
+    Map<String, Object> llmOutput = new LinkedHashMap<>();
+    llmOutput.put("answer", llm.answer);
+    llmOutput.put("provider_response", llm.response);
+    createTrace(run, "llm", "agent.chat", llmInput, llmOutput, "success", llm.latencyMs, llm.usage, null);
     List<Map<String, Object>> toolOutputs = executeConfiguredTools(app.getTenantId(), definition, request, run);
     Map<String, Object> output = new LinkedHashMap<>();
     output.put("answer", llm.answer);
@@ -340,7 +345,10 @@ public class RuntimeService {
       }
       Map<String, Object> output = executeWorkflowNode(run, type, config, context);
       context.put(current, output);
-      createTrace(run, "workflow_node", current, config, output, "success", Duration.between(started, Instant.now()).toMillis(), null, null);
+      Object traceInput = output.remove("__traceInput");
+      Object traceOutput = output.remove("__traceOutput");
+      Object traceToken = output.remove("__traceToken");
+      createTrace(run, "workflow_node", current, traceInput == null ? config : traceInput, traceOutput == null ? output : traceOutput, "success", Duration.between(started, Instant.now()).toMillis(), traceToken, null);
       if ("end".equals(type)) {
         run.setStatus("success");
         run.setOutputJson(toJson(output));
@@ -377,6 +385,17 @@ public class RuntimeService {
       LlmResult llm = callChatModel(run.getTenantId(), config, "你是工作流中的 LLM 节点。", prompt);
       output.put("text", llm.answer);
       output.put("usage", llm.usage);
+      Map<String, Object> traceInput = new LinkedHashMap<>();
+      traceInput.put("system", "你是工作流中的 LLM 节点。");
+      traceInput.put("prompt", prompt);
+      traceInput.put("node_config", config);
+      traceInput.put("provider_request", llm.request);
+      Map<String, Object> traceOutput = new LinkedHashMap<>();
+      traceOutput.put("text", llm.answer);
+      traceOutput.put("provider_response", llm.response);
+      output.put("__traceInput", traceInput);
+      output.put("__traceOutput", traceOutput);
+      output.put("__traceToken", llm.usage);
     } else if ("tool".equals(type)) {
       String toolId = stringValue(interpolate(config.get("toolId"), context));
       AiTool tool = toolRepository.findByTenantIdAndId(run.getTenantId(), toolId)
@@ -444,18 +463,32 @@ public class RuntimeService {
       usage.put("prompt_tokens", estimateTokens(systemPrompt) + estimateTokens(userPrompt));
       usage.put("completion_tokens", 24);
       usage.put("total_tokens", asInt(usage.get("prompt_tokens")) + 24);
-      return new LlmResult("未配置模型供应商，Aio 已完成运行链路并返回本地兜底回复：" + userPrompt, usage, Duration.between(start, Instant.now()).toMillis());
+      Map<String, Object> request = new LinkedHashMap<>();
+      request.put("provider", "local_fallback");
+      List<Map<String, String>> fallbackMessages = new ArrayList<>();
+      fallbackMessages.add(message("system", systemPrompt));
+      fallbackMessages.add(message("user", userPrompt));
+      request.put("messages", fallbackMessages);
+      Map<String, Object> response = new LinkedHashMap<>();
+      response.put("mode", "local_fallback");
+      return new LlmResult("未配置模型供应商，Aio 已完成运行链路并返回本地兜底回复：" + userPrompt, usage, Duration.between(start, Instant.now()).toMillis(), request, response);
     }
     ModelProviderAccount provider = providerRepository.findByTenantIdAndId(tenantId, providerId)
         .orElseThrow(() -> new EntityNotFoundException("Provider not found"));
-    String apiKey = secretCrypto.decrypt(provider.getApiKeyCiphertext());
-    String chatModel = stringValue(model.getOrDefault("chatModel", provider.getDefaultChatModel()));
+    String apiKey = cryptoService.decrypt(provider.effectiveLlmApiKeyCiphertext());
+    String chatModel = stringValue(model.getOrDefault("chatModel", provider.effectiveLlmModel()));
     if (chatModel.isBlank()) {
       throw new IllegalArgumentException("Chat model is required");
     }
-    String url = provider.getBaseUrl().endsWith("/chat/completions")
-        ? provider.getBaseUrl()
-        : provider.getBaseUrl().replaceAll("/+$", "") + "/chat/completions";
+    Map<String, Object> llmConfig = parseMap(provider.getLlmConfigJson());
+    String protocol = stringValue(llmConfig.get("protocol"));
+    if ("dashscope".equalsIgnoreCase(provider.getProviderType()) || "dashscope_generation".equalsIgnoreCase(protocol)) {
+      return callDashScopeGeneration(provider, apiKey, chatModel, model, llmConfig, systemPrompt, userPrompt, start);
+    }
+    String baseUrl = provider.effectiveLlmBaseUrl();
+    String url = baseUrl.endsWith("/chat/completions")
+      ? baseUrl
+      : baseUrl.replaceAll("/+$", "") + "/chat/completions";
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("model", chatModel);
     body.put("temperature", asDouble(model.getOrDefault("temperature", 0.3)));
@@ -471,6 +504,7 @@ public class RuntimeService {
     if (apiKey != null && !apiKey.isBlank()) {
       headers.setBearerAuth(apiKey);
     }
+    Map<String, Object> requestTrace = llmRequestTrace(provider, "openai_chat_completions", url, body);
     try {
       ResponseEntity<String> response = restTemplate.postForEntity(url, new HttpEntity<>(body, headers), String.class);
       JsonNode root = objectMapper.readTree(response.getBody());
@@ -479,10 +513,129 @@ public class RuntimeService {
       usage.put("prompt_tokens", root.path("usage").path("prompt_tokens").asInt(estimateTokens(systemPrompt) + estimateTokens(userPrompt)));
       usage.put("completion_tokens", root.path("usage").path("completion_tokens").asInt(estimateTokens(answer)));
       usage.put("total_tokens", root.path("usage").path("total_tokens").asInt(asInt(usage.get("prompt_tokens")) + asInt(usage.get("completion_tokens"))));
-      return new LlmResult(answer, usage, Duration.between(start, Instant.now()).toMillis());
+      Map<String, Object> responseTrace = new LinkedHashMap<>();
+      responseTrace.put("status_code", response.getStatusCodeValue());
+      responseTrace.put("body", parseJsonOrRaw(response.getBody()));
+      return new LlmResult(answer, usage, Duration.between(start, Instant.now()).toMillis(), requestTrace, responseTrace);
     } catch (Exception e) {
       throw new IllegalArgumentException("LLM provider call failed: " + e.getMessage(), e);
     }
+  }
+
+  private LlmResult callDashScopeGeneration(
+      ModelProviderAccount provider,
+      String apiKey,
+      String chatModel,
+      Map<String, Object> model,
+      Map<String, Object> llmConfig,
+      String systemPrompt,
+      String userPrompt,
+      Instant start) {
+    String baseUrl = provider.effectiveLlmBaseUrl();
+    String url = baseUrl.endsWith("/generation")
+      ? baseUrl
+      : baseUrl.replaceAll("/+$", "") + "/api/v1/services/aigc/text-generation/generation";
+    Map<String, Object> parameters = castMap(llmConfig.get("parameters"));
+    parameters.putIfAbsent("enable_thinking", true);
+    parameters.putIfAbsent("incremental_output", false);
+    parameters.putIfAbsent("result_format", "message");
+    parameters.putIfAbsent("temperature", asDouble(model.getOrDefault("temperature", 0.3)));
+    if (model.containsKey("maxTokens")) {
+      parameters.putIfAbsent("max_tokens", asInt(model.get("maxTokens")));
+    }
+    Map<String, Object> input = new LinkedHashMap<>();
+    List<Map<String, String>> messages = new ArrayList<>();
+    if (!stringValue(systemPrompt).isBlank()) {
+      messages.add(message("system", systemPrompt));
+    }
+    messages.add(message("user", userPrompt));
+    input.put("messages", messages);
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("model", chatModel);
+    body.put("input", input);
+    body.put("parameters", parameters);
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.APPLICATION_JSON);
+    if (apiKey != null && !apiKey.isBlank()) {
+      headers.setBearerAuth(apiKey);
+    }
+    if (Boolean.TRUE.equals(llmConfig.get("sse"))) {
+      headers.set("X-DashScope-SSE", "enable");
+    }
+    Map<String, Object> requestTrace = llmRequestTrace(provider, "dashscope_generation", url, body);
+    requestTrace.put("sse", Boolean.TRUE.equals(llmConfig.get("sse")));
+    try {
+      ResponseEntity<String> response = restTemplate.postForEntity(url, new HttpEntity<>(body, headers), String.class);
+      String responseBody = response.getBody() == null ? "" : response.getBody();
+      JsonNode root = parseDashScopeResponse(responseBody);
+      String answer = dashScopeAnswer(root, responseBody);
+      JsonNode usageNode = root.path("usage");
+      Map<String, Object> usage = new LinkedHashMap<>();
+      usage.put("prompt_tokens", usageNode.path("input_tokens").asInt(estimateTokens(systemPrompt) + estimateTokens(userPrompt)));
+      usage.put("completion_tokens", usageNode.path("output_tokens").asInt(estimateTokens(answer)));
+      usage.put("total_tokens", usageNode.path("total_tokens").asInt(asInt(usage.get("prompt_tokens")) + asInt(usage.get("completion_tokens"))));
+      Map<String, Object> responseTrace = new LinkedHashMap<>();
+      responseTrace.put("status_code", response.getStatusCodeValue());
+      responseTrace.put("body", root);
+      if (responseBody.trim().startsWith("data:")) {
+        responseTrace.put("raw_sse", responseBody);
+      }
+      return new LlmResult(answer, usage, Duration.between(start, Instant.now()).toMillis(), requestTrace, responseTrace);
+    } catch (Exception e) {
+      throw new IllegalArgumentException("DashScope LLM provider call failed: " + e.getMessage(), e);
+    }
+  }
+
+  private JsonNode parseDashScopeResponse(String responseBody) throws JsonProcessingException {
+    String trimmed = responseBody.trim();
+    if (!trimmed.startsWith("data:")) {
+      return objectMapper.readTree(responseBody);
+    }
+    String lastJson = trimmed.lines()
+      .map(String::trim)
+      .filter(line -> line.startsWith("data:"))
+      .map(line -> line.substring(5).trim())
+      .filter(line -> !line.isBlank() && !"[DONE]".equals(line))
+      .reduce((previous, current) -> current)
+      .orElse("{}");
+    return objectMapper.readTree(lastJson);
+  }
+
+  private Map<String, Object> llmRequestTrace(ModelProviderAccount provider, String protocol, String url, Map<String, Object> body) {
+    Map<String, Object> request = new LinkedHashMap<>();
+    request.put("protocol", protocol);
+    request.put("url", url);
+    request.put("provider", provider.getId());
+    request.put("provider_name", provider.getName());
+    request.put("provider_type", provider.getProviderType());
+    Map<String, Object> headers = new LinkedHashMap<>();
+    headers.put("Content-Type", "application/json");
+    headers.put("Authorization", "Bearer ***");
+    request.put("headers", headers);
+    request.put("body", body);
+    return request;
+  }
+
+  private Object parseJsonOrRaw(String body) {
+    Object parsed = parseObject(body);
+    if (parsed != null) return parsed;
+    Map<String, Object> raw = new LinkedHashMap<>();
+    raw.put("raw", body == null ? "" : body);
+    return raw;
+  }
+
+  private String dashScopeAnswer(JsonNode root, String rawBody) {
+    JsonNode choices = root.path("output").path("choices");
+    if (choices.isArray() && choices.size() > 0) {
+      String content = choices.path(0).path("message").path("content").asText("");
+      if (!content.isBlank()) return content;
+      content = choices.path(0).path("message").path("reasoning_content").asText("");
+      if (!content.isBlank()) return content;
+      content = choices.path(0).path("text").asText("");
+      if (!content.isBlank()) return content;
+    }
+    String text = root.path("output").path("text").asText("");
+    return text.isBlank() ? rawBody : text;
   }
 
   private AiTrace createTrace(AiRun run, String type, String name, Object input, Object output, String status, long latencyMs, Object token, String error) {
@@ -778,11 +931,15 @@ public class RuntimeService {
     final String answer;
     final Map<String, Object> usage;
     final long latencyMs;
+    final Map<String, Object> request;
+    final Map<String, Object> response;
 
-    LlmResult(String answer, Map<String, Object> usage, long latencyMs) {
+    LlmResult(String answer, Map<String, Object> usage, long latencyMs, Map<String, Object> request, Map<String, Object> response) {
       this.answer = answer;
       this.usage = usage;
       this.latencyMs = latencyMs;
+      this.request = request;
+      this.response = response;
     }
   }
 

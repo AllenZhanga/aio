@@ -9,4 +9,6 @@ public interface KbChunkRepository extends JpaRepository<KbChunk, String> {
   List<KbChunk> findByTenantIdAndDatasetId(String tenantId, String datasetId);
 
   void deleteByTenantIdAndDocumentId(String tenantId, String documentId);
+
+  void deleteByTenantIdAndDatasetId(String tenantId, String datasetId);
 }

@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -48,9 +49,13 @@ public class AdminIdentityController {
   @GetMapping("/workspaces")
   public List<WorkspaceResponse> listWorkspaces(
       @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
-      @RequestHeader(value = "X-Aio-User", required = false) String userId) {
-    List<Workspace> workspaces = identityService.listWorkspaces(tenantId);
-    if (!authService.isWorkspaceAdmin(userId)) {
+      @RequestHeader(value = "X-Aio-User", required = false) String userId,
+      @RequestParam(value = "scope", required = false) String scope) {
+    boolean admin = authService.isWorkspaceAdmin(userId);
+    List<Workspace> workspaces = admin && "all".equals(scope)
+        ? identityService.listAllWorkspaces()
+        : identityService.listWorkspaces(tenantId);
+    if (!admin) {
       List<String> allowedWorkspaceIds = authService.allowedWorkspaceIds(userId);
       workspaces = workspaces.stream()
           .filter(workspace -> allowedWorkspaceIds.contains(workspace.getId()))
@@ -69,7 +74,8 @@ public class AdminIdentityController {
     if (!authService.isWorkspaceAdmin(userId)) {
       throw new ForbiddenException();
     }
-    return WorkspaceResponse.from(identityService.createWorkspace(tenantId, request.name));
+    String targetTenantId = request.tenantId == null || request.tenantId.isBlank() ? tenantId : request.tenantId;
+    return WorkspaceResponse.from(identityService.createWorkspace(targetTenantId, request.name));
   }
 
   @GetMapping("/api-keys")
@@ -137,6 +143,9 @@ public class AdminIdentityController {
   }
 
   public static class CreateWorkspaceRequest {
+    @Size(max = 64)
+    public String tenantId;
+
     @NotBlank
     @Size(max = 160)
     public String name;

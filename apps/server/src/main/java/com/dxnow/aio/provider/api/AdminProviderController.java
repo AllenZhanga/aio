@@ -2,6 +2,7 @@ package com.dxnow.aio.provider.api;
 
 import com.dxnow.aio.provider.domain.ModelProviderAccount;
 import com.dxnow.aio.provider.service.ProviderService;
+import com.dxnow.aio.provider.service.ProviderService.ProviderMutation;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -9,6 +10,7 @@ import java.util.stream.Collectors;
 import javax.validation.Valid;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.Size;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -42,14 +44,7 @@ public class AdminProviderController {
       @Valid @RequestBody CreateProviderRequest request) {
     return ProviderResponse.from(providerService.create(
         tenantId,
-        request.workspaceId,
-        request.name,
-        request.providerType,
-        request.baseUrl,
-        request.apiKey,
-        request.defaultChatModel,
-        request.defaultEmbeddingModel,
-        request.configJson));
+      request.toMutation()));
   }
 
   @PutMapping("/{providerId}")
@@ -60,15 +55,7 @@ public class AdminProviderController {
     return ProviderResponse.from(providerService.update(
         tenantId,
         providerId,
-        request.workspaceId,
-        request.name,
-        request.providerType,
-        request.baseUrl,
-        request.apiKey,
-        request.defaultChatModel,
-        request.defaultEmbeddingModel,
-        request.configJson,
-        request.status));
+      request.toMutation()));
   }
 
   @PostMapping("/{providerId}/test")
@@ -83,6 +70,13 @@ public class AdminProviderController {
       @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
       @PathVariable String providerId) {
     return ProviderResponse.from(providerService.disable(tenantId, providerId));
+  }
+
+  @DeleteMapping("/{providerId}")
+  public void delete(
+      @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
+      @PathVariable String providerId) {
+    providerService.delete(tenantId, providerId);
   }
 
   public static class CreateProviderRequest {
@@ -110,11 +104,73 @@ public class AdminProviderController {
     public String defaultEmbeddingModel;
 
     public String configJson;
+
+    @Size(max = 500)
+    public String llmBaseUrl;
+
+    public String llmApiKey;
+
+    @Size(max = 160)
+    public String llmModel;
+
+    public String llmConfigJson;
+
+    @Size(max = 500)
+    public String embeddingBaseUrl;
+
+    public String embeddingApiKey;
+
+    @Size(max = 160)
+    public String embeddingModel;
+
+    public String embeddingConfigJson;
+
+    @Size(max = 500)
+    public String rerankBaseUrl;
+
+    public String rerankApiKey;
+
+    @Size(max = 160)
+    public String rerankModel;
+
+    public String rerankConfigJson;
+
+    ProviderMutation toMutation() {
+      ProviderMutation mutation = new ProviderMutation();
+      mutation.workspaceId = workspaceId;
+      mutation.name = name;
+      mutation.providerType = providerType;
+      mutation.baseUrl = baseUrl;
+      mutation.apiKey = apiKey;
+      mutation.defaultChatModel = defaultChatModel;
+      mutation.defaultEmbeddingModel = defaultEmbeddingModel;
+      mutation.configJson = configJson;
+      mutation.llmBaseUrl = llmBaseUrl;
+      mutation.llmApiKey = llmApiKey;
+      mutation.llmModel = llmModel;
+      mutation.llmConfigJson = llmConfigJson;
+      mutation.embeddingBaseUrl = embeddingBaseUrl;
+      mutation.embeddingApiKey = embeddingApiKey;
+      mutation.embeddingModel = embeddingModel;
+      mutation.embeddingConfigJson = embeddingConfigJson;
+      mutation.rerankBaseUrl = rerankBaseUrl;
+      mutation.rerankApiKey = rerankApiKey;
+      mutation.rerankModel = rerankModel;
+      mutation.rerankConfigJson = rerankConfigJson;
+      return mutation;
+    }
   }
 
   public static class UpdateProviderRequest extends CreateProviderRequest {
     @Size(max = 40)
     public String status;
+
+    @Override
+    ProviderMutation toMutation() {
+      ProviderMutation mutation = super.toMutation();
+      mutation.status = status;
+      return mutation;
+    }
   }
 
   public static class ProviderResponse {
@@ -128,6 +184,18 @@ public class AdminProviderController {
     public String defaultChatModel;
     public String defaultEmbeddingModel;
     public String configJson;
+    public String llmBaseUrl;
+    public boolean hasLlmApiKey;
+    public String llmModel;
+    public String llmConfigJson;
+    public String embeddingBaseUrl;
+    public boolean hasEmbeddingApiKey;
+    public String embeddingModel;
+    public String embeddingConfigJson;
+    public String rerankBaseUrl;
+    public boolean hasRerankApiKey;
+    public String rerankModel;
+    public String rerankConfigJson;
     public String status;
     public OffsetDateTime createdAt;
     public OffsetDateTime updatedAt;
@@ -144,6 +212,18 @@ public class AdminProviderController {
       response.defaultChatModel = account.getDefaultChatModel();
       response.defaultEmbeddingModel = account.getDefaultEmbeddingModel();
       response.configJson = account.getConfigJson();
+      response.llmBaseUrl = account.effectiveLlmBaseUrl();
+      response.hasLlmApiKey = account.effectiveLlmApiKeyCiphertext() != null;
+      response.llmModel = account.effectiveLlmModel();
+      response.llmConfigJson = account.getLlmConfigJson();
+      response.embeddingBaseUrl = account.getEmbeddingBaseUrl();
+      response.hasEmbeddingApiKey = account.getEmbeddingApiKeyCiphertext() != null;
+      response.embeddingModel = account.effectiveEmbeddingModel();
+      response.embeddingConfigJson = account.getEmbeddingConfigJson();
+      response.rerankBaseUrl = account.getRerankBaseUrl();
+      response.hasRerankApiKey = account.getRerankApiKeyCiphertext() != null;
+      response.rerankModel = account.getRerankModel();
+      response.rerankConfigJson = account.getRerankConfigJson();
       response.status = account.getStatus();
       response.createdAt = account.getCreatedAt();
       response.updatedAt = account.getUpdatedAt();
