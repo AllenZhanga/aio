@@ -503,6 +503,13 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .scopeItem strong, .keyList strong { display: block; color: #172033; }
 .scopeItem small, .keyList small, .keyList em { color: #718098; font-size: 12px; font-style: normal; overflow-wrap: anywhere; }
 .scopeItem > span:not(.runStatus) { color: #2563eb; font-size: 12px; font-weight: 900; }
+.apiKeyPane { display: grid; gap: 16px; }
+.apiKeyGrid { display: grid; grid-template-columns: minmax(360px, .95fr) minmax(320px, 1.05fr); gap: 16px; align-items: stretch; }
+.apiKeySummary .orgKpiGrid.compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.keySecretBox { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; margin-top: 14px; padding: 12px; border: 1px solid #bfdbfe; border-radius: 12px; background: #eff6ff; }
+.keySecretBox strong { color: #1d4ed8; font-size: 12px; }
+.keySecretBox code { min-width: 0; color: #172033; font-size: 12px; overflow-wrap: anywhere; }
+.apiKeyList article { grid-template-columns: minmax(0, 1fr) auto minmax(110px, auto) minmax(150px, auto) auto; }
 .experiencePane { min-width: 0; padding: 0 0 34px; background: radial-gradient(circle at 8% 0%, rgba(37, 99, 235, .13), transparent 30%), linear-gradient(180deg, #f8fbff, #f5f7fb 42%); }
 .experienceHero {
   display: grid;
@@ -656,7 +663,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 
 @media (max-width: 1280px) {
   .appGrid { grid-template-columns: repeat(3, minmax(220px, 1fr)); }
-  .agentLayout, .workflowLayout, .apiDocsGrid, .runObsGrid, .opsGrid, .taskGrid, .infoGrid, .experienceShell, .orgHero, .orgPanelGrid { grid-template-columns: 1fr; height: auto; }
+  .agentLayout, .workflowLayout, .apiDocsGrid, .runObsGrid, .opsGrid, .taskGrid, .infoGrid, .experienceShell, .orgHero, .orgPanelGrid, .apiKeyGrid { grid-template-columns: 1fr; height: auto; }
   .orgKpiGrid, .orgHeroCards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .apiMetaCard, .runListPane, .opsList, .experienceBrief { position: static; max-height: none; }
   .workflowCanvas { min-height: 620px; }
@@ -667,7 +674,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   .topTabs, .statusWrap { display: none; }
   .consoleBody { grid-template-columns: 1fr; }
   .sideNav { display: none; }
-  .toolbar, .designerHeader, .apiDocsHeader, .endpointRow, .runObsHeader, .experienceHero, .chatComposer, .ioGrid, .inlineForm, .tableList article { grid-template-columns: 1fr; }
-  .appGrid, .createTypeGrid, .formGrid.two, .opsMain .formGrid.two, .runStats, .orgKpiGrid, .orgHeroCards { grid-template-columns: 1fr; }
+  .toolbar, .designerHeader, .apiDocsHeader, .endpointRow, .runObsHeader, .experienceHero, .chatComposer, .ioGrid, .inlineForm, .tableList article, .apiKeyList article, .keySecretBox { grid-template-columns: 1fr; }
+  .appGrid, .createTypeGrid, .formGrid.two, .opsMain .formGrid.two, .runStats, .orgKpiGrid, .orgHeroCards, .apiKeySummary .orgKpiGrid.compact { grid-template-columns: 1fr; }
   .workspacePane { padding: 16px; }
 }

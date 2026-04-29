@@ -31,8 +31,8 @@ import "./app-center.css";
 
 type AppKind = "agent" | "workflow";
 type AgentMode = "agent";
-type CenterView = "center" | "designer" | "experience" | "api" | "observability" | "knowledge" | "tasks" | "providers" | "org";
-type RouteState = { view: "center" } | { view: "designer"; appId: string } | { view: "experience"; appId: string } | { view: "api"; appId: string } | { view: "observability"; appId?: string } | { view: "knowledge" } | { view: "tasks" } | { view: "providers" } | { view: "org" };
+type CenterView = "center" | "designer" | "experience" | "api" | "observability" | "knowledge" | "tasks" | "providers" | "apiKeys" | "org";
+type RouteState = { view: "center" } | { view: "designer"; appId: string } | { view: "experience"; appId: string } | { view: "api"; appId: string } | { view: "observability"; appId?: string } | { view: "knowledge" } | { view: "tasks" } | { view: "providers" } | { view: "apiKeys" } | { view: "org" };
 type AppRecord = {
   id: string;
   name: string;
@@ -102,7 +102,7 @@ type RetrieveRecord = { chunk_id: string; document_id: string; content: string; 
 type WaitTaskRecord = { id: string; appId: string; appName: string; appType: string; runId: string; nodeId: string; nodeType: string; title?: string; description?: string; status: string; actions?: unknown; context?: Record<string, unknown>; submitResult?: Record<string, unknown>; expiresAt?: string; submittedAt?: string; createdAt?: string; updatedAt?: string };
 type TenantRecord = { id: string; name: string; code: string; plan: string; status: string; createdAt?: string };
 type WorkspaceRecord = { id: string; tenantId: string; name: string; status: string; createdAt?: string };
-type ApiKeyRecord = { id: string; name: string; keyPrefix: string; status: string; workspaceId?: string; appId?: string; expiresAt?: string; createdAt?: string };
+type ApiKeyRecord = { id: string; name: string; keyPrefix: string; status: string; workspaceId?: string; appId?: string; expiresAt?: string; lastUsedAt?: string; createdAt?: string; revokedAt?: string };
 type UsageSummary = { applications: number; publishedApps: number; datasets: number; documents: number; apiKeys: number; runs: number; failedRuns: number; waitingRuns: number; waitTasks: number; pendingWaitTasks: number; totalTokens: number; averageLatencyMs: number };
 type AuditEvent = { id: string; type: string; title: string; detail: string; actor: string; target: string; createdAt?: string };
 type ProviderRecord = { id: string; tenantId: string; workspaceId?: string; name: string; providerType: string; baseUrl: string; hasApiKey: boolean; defaultChatModel?: string; defaultEmbeddingModel?: string; configJson?: string; status: string; createdAt?: string; updatedAt?: string };
@@ -225,6 +225,10 @@ export default function App() {
   const [tenants, setTenants] = useState<TenantRecord[]>([]);
   const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([]);
   const [apiKeys, setApiKeys] = useState<ApiKeyRecord[]>([]);
+  const [apiKeysLoading, setApiKeysLoading] = useState(false);
+  const [apiKeysError, setApiKeysError] = useState("");
+  const [newApiKeyName, setNewApiKeyName] = useState("Workspace Runtime Key");
+  const [createdApiKey, setCreatedApiKey] = useState("");
   const [usageSummary, setUsageSummary] = useState<UsageSummary | null>(null);
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const [orgLoading, setOrgLoading] = useState(false);
@@ -267,7 +271,7 @@ export default function App() {
       } else if (route.view === "observability") {
         setSelectedAppId(route.appId || "");
         setView(route.view);
-      } else if (route.view === "knowledge" || route.view === "tasks" || route.view === "providers" || route.view === "org") {
+      } else if (route.view === "knowledge" || route.view === "tasks" || route.view === "providers" || route.view === "apiKeys" || route.view === "org") {
         setSelectedAppId("");
         setView(route.view);
       } else {
@@ -287,6 +291,7 @@ export default function App() {
   useEffect(() => { if (authSession && view === "knowledge") void refreshKnowledge(); }, [authSession?.token, view]);
   useEffect(() => { if (authSession && view === "tasks") void refreshWaitTasks(); }, [authSession?.token, view, waitTaskFilter]);
   useEffect(() => { if (authSession && view === "providers") void refreshProviders(); }, [authSession?.token, view]);
+  useEffect(() => { if (authSession && view === "apiKeys") void refreshApiKeys(); }, [authSession?.token, view]);
   useEffect(() => { if (authSession && view === "org") void refreshOrgOps(); }, [authSession?.token, view]);
 
   async function call<T>(path: string, init: RequestInit = {}, runtime = false): Promise<T> {
@@ -816,6 +821,56 @@ export default function App() {
     }
   }
 
+  async function refreshApiKeys() {
+    setApiKeysLoading(true);
+    setApiKeysError("");
+    try {
+      const nextKeys = await call<ApiKeyRecord[]>("/api/aio/admin/api-keys");
+      setApiKeys(nextKeys);
+      setStatus("API Key 已同步");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "API Key 加载失败";
+      setApiKeysError(message);
+      setStatus(message);
+    } finally {
+      setApiKeysLoading(false);
+    }
+  }
+
+  async function createWorkspaceApiKey() {
+    if (!newApiKeyName.trim()) {
+      setStatus("请先填写 Key 名称");
+      return;
+    }
+    setBusyAction("api-key-create");
+    setCreatedApiKey("");
+    try {
+      const key = await call<{ apiKey: string }>("/api/aio/admin/api-keys", { method: "POST", body: JSON.stringify({ name: newApiKeyName.trim(), workspaceId: authSession?.workspaceId || "default" }) });
+      setCreatedApiKey(key.apiKey);
+      setRuntimeKey(key.apiKey);
+      setStatus("Workspace API Key 已创建，明文仅显示一次");
+      await refreshApiKeys();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "API Key 创建失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function revokeApiKey(key: ApiKeyRecord) {
+    if (!window.confirm(`确认吊销 API Key「${key.name}」？吊销后外部调用会立即失效。`)) return;
+    setBusyAction(`api-key-revoke-${key.id}`);
+    try {
+      await call(`/api/aio/admin/api-keys/${key.id}/revoke`, { method: "POST" });
+      setStatus(`已吊销 ${key.name}`);
+      await refreshApiKeys();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "API Key 吊销失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
   async function refreshWorkspaceOptions() {
     try {
       const nextWorkspaces = await call<WorkspaceRecord[]>("/api/aio/admin/workspaces");
@@ -921,6 +976,12 @@ export default function App() {
     navigateProviders();
   }
 
+  function openApiKeys() {
+    setSelectedAppId("");
+    setView("apiKeys");
+    navigateApiKeys();
+  }
+
   function openOrg() {
     setSelectedAppId("");
     setView("org");
@@ -1018,7 +1079,7 @@ export default function App() {
     <main className="consoleShell">
       <TopNav status={status} session={authSession} workspaces={workspaces} menuOpen={userMenuOpen} settingsOpen={settingsMenuOpen} switching={busyAction === "switch-workspace"} setMenuOpen={setUserMenuOpen} setSettingsOpen={setSettingsMenuOpen} switchWorkspace={switchWorkspace} openProviders={openProviders} logout={logoutConsole} />
       <section className="consoleBody">
-        <SideNav activeView={view} session={authSession} onCreate={() => openCreateModal("agent", "agent")} openApps={backToCenter} openObservability={() => openObservability()} openKnowledge={openKnowledge} openOrg={openOrg} />
+        <SideNav activeView={view} session={authSession} onCreate={() => openCreateModal("agent", "agent")} openApps={backToCenter} openObservability={() => openObservability()} openKnowledge={openKnowledge} openApiKeys={openApiKeys} openOrg={openOrg} />
         {view === "center" ? (
           <AppCenter apps={apps} visibleApps={visibleApps} loading={appsLoading} error={appsError} filter={filter} query={query} session={authSession} setFilter={setFilter} setQuery={setQuery} refreshApps={refreshApps} openCreateModal={openCreateModal} openDesigner={openDesigner} openExperience={openExperience} archiveApp={archiveApp} busyAction={busyAction} />
         ) : view === "api" ? (
@@ -1033,6 +1094,8 @@ export default function App() {
           <TaskCenterPage tasks={waitTasks} loading={waitTasksLoading} error={waitTasksError} filter={waitTaskFilter} busyAction={busyAction} setFilter={setWaitTaskFilter} refreshTasks={refreshWaitTasks} submitTask={submitWaitTask} />
         ) : view === "providers" ? (
           <ProviderPage providers={providers} loading={providersLoading} error={providersError} form={providerForm} busyAction={busyAction} setForm={setProviderForm} refreshProviders={refreshProviders} createProvider={createProvider} testProvider={testProvider} disableProvider={disableProvider} />
+        ) : view === "apiKeys" ? (
+          <ApiKeyPage apiKeys={apiKeys} loading={apiKeysLoading} error={apiKeysError} session={authSession} newName={newApiKeyName} createdApiKey={createdApiKey} busyAction={busyAction} setNewName={setNewApiKeyName} refreshApiKeys={refreshApiKeys} createApiKey={createWorkspaceApiKey} revokeApiKey={revokeApiKey} />
         ) : view === "org" ? (
           <OrgOpsPage tenants={tenants} workspaces={workspaces} apiKeys={apiKeys} usage={usageSummary} auditEvents={auditEvents} session={authSession} loading={orgLoading} error={orgError} refreshOrg={refreshOrgOps} />
         ) : (
@@ -1055,8 +1118,8 @@ function TopNav({ status, session, workspaces, menuOpen, settingsOpen, switching
   return <header className="topNav"><div className="logoGroup"><div className="logoGem">A</div><strong>Aio</strong></div><div className="statusDot"><Sparkles size={14} /><span>{status}</span></div><div className="topActions"><div className="settingsWrap"><button className="settingsBtn" title="系统设置" onClick={() => { setSettingsOpen(!settingsOpen); setMenuOpen(false); }}><Settings2 size={17} /></button>{settingsOpen && <div className="settingsMenu"><strong>系统设置</strong><button onClick={() => { setSettingsOpen(false); openProviders(); }}><Bot size={16} /><span><b>模型供应商</b><small>配置 LLM 网关、模型和 API Key</small></span></button></div>}</div><div className="avatarWrap"><button className="avatar" title="账号菜单" onClick={() => { setMenuOpen(!menuOpen); setSettingsOpen(false); }}>{displayName.slice(0, 1).toUpperCase()}</button>{menuOpen && <div className="avatarMenu"><strong>基本信息</strong><dl><dt>账号</dt><dd>{session.userId}</dd><dt>名称</dt><dd>{displayName}</dd><dt>角色</dt><dd>{roleLabel}</dd><dt>租户</dt><dd>{session.tenantId}</dd><dt>工作空间</dt><dd>{session.workspaceId}</dd></dl><label className="menuField"><span>切换工作空间</span><select value={session.workspaceId} disabled={switching || options.length <= 1} onChange={(event) => void switchWorkspace(event.target.value)}>{options.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name || workspace.id} · {workspace.id}</option>)}</select></label><button className="dangerTextBtn" onClick={logout}><X size={14} /> 退出登录</button></div>}</div></div></header>;
 }
 
-function SideNav({ activeView, session, onCreate, openApps, openObservability, openKnowledge, openOrg }: { activeView: CenterView; session: AuthSession; onCreate: () => void; openApps: () => void; openObservability: () => void; openKnowledge: () => void; openOrg: () => void }) {
-  return <aside className="sideNav"><button className="createBtn" onClick={onCreate}><Plus size={17} /> 创建应用</button><button className={`sideItem ${activeView === "center" || activeView === "designer" || activeView === "experience" || activeView === "api" ? "active" : ""}`} onClick={openApps}><Boxes size={18} /> 应用管理</button><button className={`sideItem ${activeView === "knowledge" ? "active" : ""}`} onClick={openKnowledge}><Database size={18} /> 知识库</button><button className={`sideItem ${activeView === "observability" ? "active" : ""}`} onClick={openObservability}><Play size={18} /> 运行观测</button><button className={`sideItem ${activeView === "org" ? "active" : ""}`} onClick={openOrg}><Building2 size={18} /> 组织运营</button><p className="sideGroup">当前空间：{session.workspaceId}<br />账号：{session.displayName || session.userId}</p></aside>;
+function SideNav({ activeView, session, onCreate, openApps, openObservability, openKnowledge, openApiKeys, openOrg }: { activeView: CenterView; session: AuthSession; onCreate: () => void; openApps: () => void; openObservability: () => void; openKnowledge: () => void; openApiKeys: () => void; openOrg: () => void }) {
+  return <aside className="sideNav"><button className="createBtn" onClick={onCreate}><Plus size={17} /> 创建应用</button><button className={`sideItem ${activeView === "center" || activeView === "designer" || activeView === "experience" || activeView === "api" ? "active" : ""}`} onClick={openApps}><Boxes size={18} /> 应用管理</button><button className={`sideItem ${activeView === "knowledge" ? "active" : ""}`} onClick={openKnowledge}><Database size={18} /> 知识库</button><button className={`sideItem ${activeView === "apiKeys" ? "active" : ""}`} onClick={openApiKeys}><ShieldCheck size={18} /> API Key</button><button className={`sideItem ${activeView === "observability" ? "active" : ""}`} onClick={openObservability}><Play size={18} /> 运行观测</button><button className={`sideItem ${activeView === "org" ? "active" : ""}`} onClick={openOrg}><Building2 size={18} /> 组织运营</button><p className="sideGroup">当前空间：{session.workspaceId}<br />账号：{session.displayName || session.userId}</p></aside>;
 }
 
 function AppCenter(props: { apps: AppRecord[]; visibleApps: AppRecord[]; loading: boolean; error: string; filter: "all" | AppKind; query: string; session: AuthSession; setFilter: (filter: "all" | AppKind) => void; setQuery: (query: string) => void; refreshApps: () => Promise<void>; openCreateModal: (type: AppKind, mode?: AgentMode) => void; openDesigner: (app: AppRecord) => void; openExperience: (app: AppRecord) => void; archiveApp: (app: AppRecord) => Promise<void>; busyAction: string }) {
@@ -1146,6 +1209,11 @@ function OrgOpsPage(props: { tenants: TenantRecord[]; workspaces: WorkspaceRecor
   const roleLabel = props.session.role === "admin" || (!props.session.role && props.session.userId === "admin") ? "管理员" : "成员";
   const activeKeys = props.apiKeys.filter((key) => key.status === "active").length;
   return <section className="workspacePane orgPane"><div className="pageHeader"><div><h1>组织运营</h1><p>用于确认当前空间的权限边界、资源消耗、集成凭据和最近关键操作。</p></div><button className="ghostBtn" disabled={props.loading} onClick={() => void props.refreshOrg()}>{props.loading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />} 刷新</button></div>{props.error && <div className="errorBanner"><AlertCircle size={16} /><span>{props.error}</span><button onClick={() => void props.refreshOrg()}>重试</button></div>}<div className="orgHero"><div className="orgHeroText"><span><Building2 size={18} /> 当前组织上下文</span><h2>{props.session.tenantId} / {props.session.workspaceId}</h2><p>这里不是业务配置入口，而是管理员看“谁在什么空间、用了多少、开放了哪些 Key、最近做了什么”的运营视图。</p></div><div className="orgHeroCards"><article><small>账号角色</small><strong>{roleLabel}</strong><p>{props.session.displayName || props.session.userId}</p></article><article><small>可见空间</small><strong>{props.workspaces.length}</strong><p>{roleLabel === "管理员" ? "管理员可查看全部授权空间" : "成员仅查看授权空间"}</p></article><article><small>活跃 Key</small><strong>{activeKeys}</strong><p>外部系统调用 Runtime API 的凭据</p></article></div></div><div className="orgKpiGrid"><article><span>应用总数</span><strong>{usage?.applications ?? 0}</strong><p>已发布 {usage?.publishedApps ?? 0}</p></article><article><span>知识资产</span><strong>{usage?.datasets ?? 0}</strong><p>文档 {usage?.documents ?? 0}</p></article><article><span>运行次数</span><strong>{usage?.runs ?? 0}</strong><p>失败 {usage?.failedRuns ?? 0} · 等待 {usage?.waitingRuns ?? 0}</p></article><article><span>等待任务</span><strong>{usage?.pendingWaitTasks ?? 0}</strong><p>待处理 / 总计 {usage?.waitTasks ?? 0}</p></article><article><span>Token</span><strong>{usage?.totalTokens ?? 0}</strong><p>累计消耗</p></article><article><span>平均耗时</span><strong>{usage?.averageLatencyMs ?? 0}ms</strong><p>端到端运行</p></article></div><div className="orgPanelGrid"><section className="designCard"><div className="sectionTitle"><ShieldCheck size={18} /><div><h2>空间与权限边界</h2><p>应用、知识库、模型供应商、Key 和运行记录都按 workspace 隔离。</p></div></div><div className="scopeStack">{props.tenants.map((tenant) => <article key={tenant.id} className="scopeItem tenant"><div><strong>{tenant.name}</strong><small>{tenant.code} · {tenant.plan}</small></div><span className="runStatus success">{tenant.status}</span></article>)}{props.workspaces.map((workspace) => <article key={workspace.id} className={`scopeItem ${workspace.id === props.session.workspaceId ? "active" : ""}`}><div><strong>{workspace.name || workspace.id}</strong><small>{workspace.tenantId}</small></div><span>{workspace.id === props.session.workspaceId ? "当前空间" : workspace.status}</span></article>)}</div></section><section className="designCard"><div className="sectionTitle"><Code2 size={18} /><div><h2>API Key 与集成范围</h2><p>外部系统通过这些 Key 调用 Runtime API；明文只在创建时返回。</p></div></div><div className="keyList">{props.apiKeys.map((key) => <article key={key.id}><div><strong>{key.name}</strong><small>{key.keyPrefix}*** · {key.appId ? "应用级" : "空间级"}</small></div><span className={`runStatus ${key.status === "active" ? "success" : "cancelled"}`}>{key.status}</span><em>{key.appId || key.workspaceId || props.session.workspaceId}</em></article>)}{!props.apiKeys.length && <StatePanel title="暂无 API Key" text="在应用 API 文档或设计页生成 Key 后，会在这里看到 scope 和状态。" />}</div></section><section className="designCard orgAuditCard"><div className="sectionTitle"><ClipboardCheck size={18} /><div><h2>最近审计事件</h2><p>追踪发布、Key 创建、知识索引等会影响运行的操作。</p></div></div><div className="auditTimeline">{props.auditEvents.map((event) => <article key={`${event.type}-${event.id}`}><span>{event.type}</span><strong>{event.title}</strong><p>{event.detail}</p><small>{event.actor} · {event.target} · {formatDate(event.createdAt)}</small></article>)}</div>{!props.auditEvents.length && <StatePanel title="暂无审计事件" text="发布应用、创建 Key 或写入知识文档后会生成审计摘要。" />}</section></div></section>;
+}
+
+function ApiKeyPage(props: { apiKeys: ApiKeyRecord[]; loading: boolean; error: string; session: AuthSession; newName: string; createdApiKey: string; busyAction: string; setNewName: (value: string) => void; refreshApiKeys: () => Promise<void>; createApiKey: () => Promise<void>; revokeApiKey: (key: ApiKeyRecord) => Promise<void> }) {
+  const activeKeys = props.apiKeys.filter((key) => key.status === "active").length;
+  return <section className="workspacePane apiKeyPane"><div className="pageHeader"><div><h1>API Key 管理</h1><p>管理当前工作空间的 Runtime API 调用凭据、scope、状态和最近使用时间。</p></div><button className="ghostBtn" disabled={props.loading} onClick={() => void props.refreshApiKeys()}>{props.loading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />} 刷新</button></div>{props.error && <div className="errorBanner"><AlertCircle size={16} /><span>{props.error}</span><button onClick={() => void props.refreshApiKeys()}>重试</button></div>}<div className="apiKeyGrid"><section className="designCard"><div className="sectionTitle"><ShieldCheck size={18} /><div><h2>创建 Workspace Key</h2><p>明文只在创建后显示一次，后续只能吊销后重建。</p></div></div><Field label="Key 名称"><input value={props.newName} onChange={(event) => props.setNewName(event.target.value)} placeholder="例如 Production Runtime Key" /></Field><div className="stackPanel horizontal"><button className="primaryBtn" disabled={props.busyAction === "api-key-create"} onClick={() => void props.createApiKey()}>{props.busyAction === "api-key-create" ? <Loader2 className="spin" size={16} /> : <Plus size={16} />} 创建 Key</button><p className="mutedText">Scope：{props.session.tenantId} / {props.session.workspaceId}</p></div>{props.createdApiKey && <div className="keySecretBox"><strong>新 Key</strong><code>{props.createdApiKey}</code><CopyButton text={props.createdApiKey} /></div>}</section><section className="designCard apiKeySummary"><div className="sectionTitle"><Code2 size={18} /><div><h2>凭据概览</h2><p>外部系统通过 Bearer Key 调用 `/v1/**`。</p></div></div><div className="orgKpiGrid compact"><article><span>全部 Key</span><strong>{props.apiKeys.length}</strong><p>当前可见范围</p></article><article><span>Active</span><strong>{activeKeys}</strong><p>可继续调用</p></article><article><span>Revoked</span><strong>{props.apiKeys.filter((key) => key.status !== "active").length}</strong><p>已停用</p></article></div></section></div><section className="designCard"><div className="sectionTitle"><ClipboardCheck size={18} /><div><h2>Key 列表</h2><p>查看前缀、scope、最后调用时间，并吊销不再使用的 Key。</p></div></div><div className="keyList apiKeyList">{props.apiKeys.map((key) => <article key={key.id}><div><strong>{key.name}</strong><small>{key.keyPrefix}*** · {key.appId ? "应用级" : "空间级"} · {key.id}</small></div><span className={`runStatus ${key.status === "active" ? "success" : "cancelled"}`}>{key.status}</span><em>{key.appId || key.workspaceId || props.session.workspaceId}</em><small>last used: {formatDate(key.lastUsedAt)}</small><button className="dangerTextBtn" disabled={key.status !== "active" || props.busyAction === `api-key-revoke-${key.id}`} onClick={() => void props.revokeApiKey(key)}>{props.busyAction === `api-key-revoke-${key.id}` ? <Loader2 className="spin" size={14} /> : <X size={14} />} 吊销</button></article>)}</div>{!props.apiKeys.length && !props.loading && <StatePanel title="暂无 API Key" text="创建一个 workspace key 后，外部系统即可调用 Runtime API。" />}</section></section>;
 }
 
 function EndpointRow({ method, path }: { method: string; path: string }) {
@@ -1323,6 +1391,7 @@ function parseRoute(): RouteState {
   if (hash === "/knowledge") return { view: "knowledge" };
   if (hash === "/tasks") return { view: "tasks" };
   if (hash === "/providers") return { view: "providers" };
+  if (hash === "/api-keys") return { view: "apiKeys" };
   if (hash === "/org") return { view: "org" };
   if (hash === "/observability/runs") return { view: "observability" };
   const experienceMatch = hash.match(/^\/apps\/([^/]+)\/experience$/);
@@ -1367,6 +1436,10 @@ function navigateKnowledge() {
 
 function navigateProviders() {
   if (window.location.hash !== "#/providers") window.location.hash = "#/providers";
+}
+
+function navigateApiKeys() {
+  if (window.location.hash !== "#/api-keys") window.location.hash = "#/api-keys";
 }
 
 function navigateOrg() {
