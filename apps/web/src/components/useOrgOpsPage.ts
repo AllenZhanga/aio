@@ -162,6 +162,21 @@ export function useOrgOpsPage({
     }
   }
 
+  async function deleteWorkspace(workspace: WorkspaceRecord) {
+    setBusyAction(`workspace-delete-${workspace.id}`);
+    try {
+      await call<WorkspaceRecord>(`/api/aio/admin/workspaces/${encodeURIComponent(workspace.id)}?tenantId=${encodeURIComponent(workspace.tenantId)}`, {
+        method: "DELETE",
+      });
+      setStatus(`已删除空间 ${workspace.name || workspace.id}`);
+      await refreshOrg();
+    } catch (nextError) {
+      setStatus(nextError instanceof Error ? nextError.message : "空间删除失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
   function toggleUserWorkspace(workspaceId: string) {
     setSelectedUserWorkspaceIds((current) => current.includes(workspaceId)
       ? current.filter((item) => item !== workspaceId)
@@ -234,6 +249,7 @@ export function useOrgOpsPage({
     closeForm,
     createTenant,
     createWorkspace,
+    deleteWorkspace,
     createUser,
     toggleUserWorkspace,
     refreshOrg,

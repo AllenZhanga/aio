@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from "react";
-import { AlertCircle, Boxes, CheckCircle2, Info, Loader2, X } from "lucide-react";
+import { cloneElement, isValidElement, useCallback, useEffect, useRef, useState, type MouseEvent, type ReactElement, type ReactNode } from "react";
+import { AlertCircle, AlertTriangle, Boxes, CheckCircle2, Info, Loader2, X } from "lucide-react";
 
 export function Field({
   label,
@@ -192,6 +192,204 @@ export function Modal({
         {footer && <footer>{footer}</footer>}
       </section>
     </div>
+  );
+}
+
+export type ConfirmTone = "info" | "warning" | "danger" | "success";
+
+export type ConfirmOptions = {
+  title?: string;
+  message: ReactNode;
+  confirmText?: string;
+  cancelText?: string;
+  tone?: ConfirmTone;
+};
+
+export type ConfirmAction = (options: string | ConfirmOptions) => Promise<boolean>;
+
+function normalizeConfirmOptions(options: string | ConfirmOptions): ConfirmOptions {
+  return typeof options === "string" ? { message: options } : options;
+}
+
+export function ConfirmDialog({
+  open,
+  options,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  options: ConfirmOptions | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (!open || !options) return null;
+  const tone = options.tone || "warning";
+  const title = options.title || "确认操作";
+  const confirmText = options.confirmText || "确认";
+  const cancelText = options.cancelText || "取消";
+  const Icon = tone === "info" ? Info : tone === "success" ? CheckCircle2 : AlertTriangle;
+  return (
+    <div className="modalBackdrop confirmBackdrop" role="presentation" onMouseDown={onCancel}>
+      <section
+        className={`confirmDialog ${tone}`}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-dialog-title"
+        aria-describedby="confirm-dialog-message"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header>
+          <span className="confirmIcon" aria-hidden="true">
+            <Icon size={22} />
+          </span>
+          <div>
+            <h2 id="confirm-dialog-title">{title}</h2>
+            <div id="confirm-dialog-message" className="confirmMessage">{options.message}</div>
+          </div>
+        </header>
+        <footer>
+          <button className="ghostBtn" onClick={onCancel} autoFocus>
+            {cancelText}
+          </button>
+          <button className={`confirmAcceptBtn ${tone}`} onClick={onConfirm}>
+            {confirmText}
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+export function useConfirmDialog() {
+  const [options, setOptions] = useState<ConfirmOptions | null>(null);
+  const resolverRef = useRef<((confirmed: boolean) => void) | null>(null);
+
+  const settle = useCallback((confirmed: boolean) => {
+    resolverRef.current?.(confirmed);
+    resolverRef.current = null;
+    setOptions(null);
+  }, []);
+
+  const confirm = useCallback<ConfirmAction>((nextOptions) => {
+    return new Promise((resolve) => {
+      resolverRef.current?.(false);
+      resolverRef.current = resolve;
+      setOptions(normalizeConfirmOptions(nextOptions));
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!options) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") settle(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [options, settle]);
+
+  useEffect(() => {
+    return () => {
+      resolverRef.current?.(false);
+      resolverRef.current = null;
+    };
+  }, []);
+
+  return {
+    confirm,
+    dialog: (
+      <ConfirmDialog
+        open={!!options}
+        options={options}
+        onCancel={() => settle(false)}
+        onConfirm={() => settle(true)}
+      />
+    ),
+  };
+}
+
+type PopConfirmTriggerProps = {
+  disabled?: boolean;
+  onClick?: (event: MouseEvent<HTMLElement>) => void;
+};
+
+export function PopConfirm({
+  title = "确认删除",
+  message,
+  confirmText = "确认删除",
+  cancelText = "取消",
+  tone = "danger",
+  placement = "top-end",
+  children,
+  onConfirm,
+}: {
+  title?: string;
+  message: ReactNode;
+  confirmText?: string;
+  cancelText?: string;
+  tone?: ConfirmTone;
+  placement?: "top-end" | "bottom-end";
+  children: ReactElement<PopConfirmTriggerProps>;
+  onConfirm: () => void | Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLSpanElement | null>(null);
+  const triggerDisabled = !!children.props.disabled;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handlePointerDown = (event: globalThis.MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", handlePointerDown, true);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown, true);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  const trigger = isValidElement<PopConfirmTriggerProps>(children)
+    ? cloneElement(children, {
+        onClick: (event: MouseEvent<HTMLElement>) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (triggerDisabled) return;
+          setOpen((current) => !current);
+        },
+      })
+    : children;
+
+  return (
+    <span
+      className="popConfirmWrap"
+      ref={rootRef}
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      {trigger}
+      {open && (
+        <span className={`popConfirmBubble ${tone} ${placement}`} role="dialog" aria-label={title}>
+          <span className="popConfirmArrow" aria-hidden="true" />
+          <span className="popConfirmTitle"><AlertTriangle size={15} /> {title}</span>
+          <span className="popConfirmMessage">{message}</span>
+          <span className="popConfirmActions">
+            <button className="ghostTinyBtn" onClick={() => setOpen(false)}>{cancelText}</button>
+            <button
+              className={`confirmAcceptBtn ${tone}`}
+              onClick={() => {
+                setOpen(false);
+                void onConfirm();
+              }}
+            >
+              {confirmText}
+            </button>
+          </span>
+        </span>
+      )}
+    </span>
   );
 }
 

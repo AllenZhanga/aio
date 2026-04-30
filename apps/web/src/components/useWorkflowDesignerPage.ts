@@ -3,6 +3,7 @@ import { buildWorkflowDefinition } from "../appDefinitions";
 import type {
   ConnectState,
   DragState,
+  WorkflowAddNodeOptions,
   WorkflowEdge,
   WorkflowNode,
   WorkflowNodeType,
@@ -11,6 +12,7 @@ import {
   defaultEdges,
   defaultNodeConfig,
   defaultNodes,
+  newWorkflowNode,
   nodeMeta,
   parseConfigValue,
   restoreWorkflowDefinition,
@@ -59,20 +61,49 @@ export function useWorkflowDesignerPage() {
     setSelectedEdgeId("");
   }
 
-  function addNode(type: WorkflowNodeType) {
+  function addNode(type: WorkflowNodeType, options: WorkflowAddNodeOptions = {}) {
     const id = `${type}_${Math.random().toString(36).slice(2, 8)}`;
     const index = nodes.length;
-    const nextNode: WorkflowNode = {
-      id,
+    const nextNode = newWorkflowNode(
       type,
-      label: nodeMeta[type].name,
-      x: 130 + (index % 4) * 230,
-      y: 340 + Math.floor(index / 4) * 132,
-      config: defaultNodeConfig(type),
-    };
+      id,
+      options.position?.x ?? 130 + (index % 4) * 230,
+      options.position?.y ?? 340 + Math.floor(index / 4) * 132,
+    );
+    nextNode.label = nodeMeta[type].name;
+    nextNode.config = defaultNodeConfig(type);
     setNodes((current) => [...current, nextNode]);
+    setEdges((current) => {
+      const withoutReplaced = options.replaceEdgeId
+        ? current.filter((edge) => edge.id !== options.replaceEdgeId)
+        : current;
+      const additions: WorkflowEdge[] = [];
+      if (options.connectFrom) {
+        additions.push({ id: `edge_${options.connectFrom}_${id}_${Date.now()}`, from: options.connectFrom, to: id });
+      }
+      if (options.connectTo) {
+        additions.push({ id: `edge_${id}_${options.connectTo}_${Date.now()}`, from: id, to: options.connectTo });
+      }
+      return [...withoutReplaced, ...additions];
+    });
     setSelectedNodeId(id);
     setSelectedEdgeId("");
+  }
+
+  function connectNodes(from: string, to: string) {
+    if (from === to) return;
+    if (nodes.find((node) => node.id === from)?.type === "end") return;
+    if (nodes.find((node) => node.id === to)?.type === "start") return;
+    const edgeId = `edge_${from}_${to}_${Date.now()}`;
+    setEdges((current) => {
+      if (current.some((edge) => edge.from === from && edge.to === to)) return current;
+      return [
+        ...current,
+        { id: edgeId, from, to },
+      ];
+    });
+    setSelectedEdgeId(edgeId);
+    setSelectedNodeId("");
   }
 
   function removeNode(nodeId: string) {
@@ -194,6 +225,7 @@ export function useWorkflowDesignerPage() {
       selectedEdge,
       workflowDefinition,
       addNode,
+      connectNodes,
       removeNode,
       removeEdge,
       updateEdge,

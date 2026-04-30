@@ -67,14 +67,13 @@ export function useExperiencePage({
         await sendStreamingAgentMessage(path, prompt);
         return;
       }
-      const body =
-        {
-          inputs: {
-            question: prompt,
-            operator_id: authSession?.userId || "console-user",
-          },
-          response_mode: "blocking",
-        };
+      const body = {
+        inputs: {
+          question: prompt,
+          operator_id: authSession?.userId || "console-user",
+        },
+        response_mode: "blocking",
+      };
       const response = await call<RuntimeResponse>(
         path,
         { method: "POST", body: JSON.stringify(body) },
@@ -155,8 +154,7 @@ export function useExperiencePage({
             role: "assistant",
             text: runtimeOutputText(run.outputs, run.status),
             meta: `run ${run.run_id} · ${run.status}`,
-            runId: run.run_id,
-            status: run.status,
+            ...runtimeResponseDetails({ run_id: run.run_id, status: run.status, outputs: run.outputs } as RuntimeResponse),
           },
         ]);
         setStatus(`流程已${run.status === "success" ? "完成" : run.status}`);
@@ -176,7 +174,7 @@ export function useExperiencePage({
     }
     const text =
       type === "agent"
-        ? response.answer || runtimeOutputText(response.outputs, response.status)
+        ? runtimeResponseText(response) || runtimeOutputText(response.outputs, response.status)
         : runtimeOutputText(response.outputs, response.status);
     setMessages((current) => [
       ...current,
@@ -192,6 +190,8 @@ export function useExperiencePage({
 
   async function sendStreamingAgentMessage(path: string, prompt: string) {
     const assistantId = `msg_${Date.now()}_assistant_stream`;
+    let streamedText = "";
+    let completed = false;
     setMessages((current) => [
       ...current,
       { id: assistantId, role: "assistant", text: "", meta: "连接中", streaming: true },
@@ -226,12 +226,20 @@ export function useExperiencePage({
       if (event === "run_started") {
         updateMessage(assistantId, { meta: "流式响应 · 已开始", streaming: true });
       }
-      if (event === "message") {
-        const text = stringValue(data.answer || data.delta || data.content || data.text);
-        updateMessage(assistantId, { text: text || "正在生成...", meta: "流式响应 · 生成中", streaming: true });
+      if (isStreamingTextEvent(event)) {
+        const delta = stringValue(data.delta || data.chunk);
+        const fullText = stringValue(data.answer || data.content || data.text);
+        streamedText = delta ? `${streamedText}${delta}` : (fullText || streamedText);
+        updateMessage(assistantId, {
+          text: streamedText || "正在生成...",
+          meta: "流式响应 · 生成中",
+          streaming: true,
+          ...runtimeResponseDetails(data as RuntimeResponse),
+        });
       }
-      if (event === "run_completed") {
-        const answer = stringValue(data.answer || data.outputs?.answer);
+      if (isCompletedEvent(event)) {
+        completed = true;
+        const answer = runtimeResponseText(data as RuntimeResponse) || streamedText;
         const responseDetails = runtimeResponseDetails(data as RuntimeResponse);
         updateMessage(assistantId, {
           text: answer || "已完成。",
@@ -241,6 +249,7 @@ export function useExperiencePage({
         });
       }
       if (event === "error") {
+        completed = true;
         updateMessage(assistantId, {
           text: stringValue(data.message) || "流式响应失败",
           meta: "error",
@@ -248,6 +257,13 @@ export function useExperiencePage({
         });
       }
     });
+    if (!completed) {
+      updateMessage(assistantId, {
+        text: streamedText || "已完成。",
+        meta: "流式响应 · 已结束",
+        streaming: false,
+      });
+    }
     setStatus("AI 应用流式体验完成");
   }
 
@@ -294,35 +310,80 @@ export function useExperiencePage({
 }
 
 function runtimeResponseDetails(response: RuntimeResponse): Partial<ExperienceMessage> {
-  const outputs = response.outputs || {};
+  const outputs = objectValue(response.outputs);
   return {
-    runId: response.run_id,
-    status: response.status,
-    conversationId: stringValue(response.conversation_id || outputs.conversation_id),
-    knowledge: knowledgeRecords(response.knowledge || outputs.knowledge),
-    usage: usageRecord(response.usage || outputs.usage),
+    runId: stringValue(response.run_id || outputs.run_id || outputs.runId) || undefined,
+    status: stringValue(response.status || outputs.status) || undefined,
+    conversationId: stringValue(response.conversation_id || outputs.conversation_id || outputs.conversationId) || undefined,
+    knowledge: knowledgeRecords(response.knowledge || outputs.knowledge || outputs.references || outputs.citations),
+    usage: usageRecord(response.usage || outputs.usage || outputs.token_usage || outputs.tokenUsage),
   };
 }
 
+function runtimeResponseText(response: RuntimeResponse) {
+  const outputs = objectValue(response.outputs);
+  return stringValue(response.answer || outputs.answer || outputs.text || outputs.output || outputs.result);
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
 function knowledgeRecords(value: unknown): RetrieveRecord[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => item && typeof item === "object" ? item as RetrieveRecord : null)
-    .filter((item): item is RetrieveRecord => !!item && typeof item.content === "string");
+  const records = Array.isArray(value)
+    ? value
+    : value && typeof value === "object" && Array.isArray((value as Record<string, unknown>).records)
+      ? (value as Record<string, unknown>).records
+      : [];
+  if (!Array.isArray(records)) return [];
+  const normalized: Array<RetrieveRecord | null> = records
+    .map((item): RetrieveRecord | null => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as Record<string, unknown>;
+      const content = stringValue(record.content || record.text || record.chunk);
+      if (!content) return null;
+      return {
+        chunk_id: stringValue(record.chunk_id || record.chunkId || record.id) || "chunk",
+        document_id: stringValue(record.document_id || record.documentId || record.doc_id || record.docId) || "document",
+        content,
+        score: numberValue(record.score) ?? 0,
+        metadata: typeof record.metadata === "string" ? record.metadata : JSON.stringify(record.metadata || {}),
+      } satisfies RetrieveRecord;
+    });
+  return normalized.filter((item): item is RetrieveRecord => !!item);
 }
 
 function usageRecord(value: unknown): RuntimeUsage | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
-  return {
-    prompt_tokens: numberValue(record.prompt_tokens),
-    completion_tokens: numberValue(record.completion_tokens),
-    total_tokens: numberValue(record.total_tokens),
+  const usage = {
+    prompt_tokens: numberValue(record.prompt_tokens ?? record.promptTokens ?? record.input_tokens ?? record.inputTokens),
+    completion_tokens: numberValue(record.completion_tokens ?? record.completionTokens ?? record.output_tokens ?? record.outputTokens),
+    total_tokens: numberValue(record.total_tokens ?? record.totalTokens),
   };
+  if (usage.total_tokens === undefined && (usage.prompt_tokens !== undefined || usage.completion_tokens !== undefined)) {
+    usage.total_tokens = (usage.prompt_tokens || 0) + (usage.completion_tokens || 0);
+  }
+  return usage.prompt_tokens === undefined && usage.completion_tokens === undefined && usage.total_tokens === undefined
+    ? undefined
+    : usage;
 }
 
 function numberValue(value: unknown) {
-  return typeof value === "number" ? value : undefined;
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function isStreamingTextEvent(event: string) {
+  return ["message", "delta", "message_delta", "chunk", "answer"].includes(event);
+}
+
+function isCompletedEvent(event: string) {
+  return ["run_completed", "completed", "message_end", "done"].includes(event);
 }
 
 async function readSseStream(
@@ -357,6 +418,7 @@ function parseSseEvent(block: string) {
     .map((line) => line.slice(5).trim())
     .join("\n");
   if (!dataText) return null;
+  if (dataText === "[DONE]") return { event: "done", data: {} };
   try {
     return { event, data: JSON.parse(dataText) as Record<string, any> };
   } catch {

@@ -1,6 +1,6 @@
 import { AlertCircle, ClipboardCheck, Code2, Loader2, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import type { ApiKeyRecord, AppRecord, AuthSession } from "../types";
-import { ActionBar, CopyButton, Drawer, EntityList, EntityRow, Field, StatePanel } from "./ui";
+import { ActionBar, CopyButton, Drawer, EntityList, EntityRow, Field, PopConfirm, StatePanel } from "./ui";
 
 export function ApiKeyPage(props: {
   apiKeys: ApiKeyRecord[];
@@ -92,9 +92,16 @@ export function ApiKeyPage(props: {
                       {props.busyAction === `api-key-revoke-${key.id}` ? <Loader2 className="spin" size={14} /> : <X size={14} />} 吊销
                     </button>
                   ) : (
-                    <button className="dangerTextBtn" disabled={props.busyAction === `api-key-delete-${key.id}`} onClick={() => void props.deleteApiKey(key)}>
-                      {props.busyAction === `api-key-delete-${key.id}` ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />} 删除
-                    </button>
+                    <PopConfirm
+                      title="删除 API Key 记录"
+                      message={`确认删除已吊销的 API Key「${key.name}」？删除后列表中不再展示该记录。`}
+                      confirmText="删除记录"
+                      onConfirm={() => props.deleteApiKey(key)}
+                    >
+                      <button className="dangerTextBtn" disabled={props.busyAction === `api-key-delete-${key.id}`}>
+                        {props.busyAction === `api-key-delete-${key.id}` ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />} 删除
+                      </button>
+                    </PopConfirm>
                   )}
                 </>
               }

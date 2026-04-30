@@ -1,6 +1,7 @@
 package com.dxnow.aio.app.api;
 
 import com.dxnow.aio.app.domain.AiApp;
+import com.dxnow.aio.app.domain.AiAppDraft;
 import com.dxnow.aio.app.domain.AiAppVersion;
 import com.dxnow.aio.app.service.AppService;
 import com.dxnow.aio.app.service.AppValidationService;
@@ -91,6 +92,39 @@ public class AdminAppController {
         .collect(Collectors.toList());
   }
 
+  @GetMapping("/{appId}/draft")
+  public AppDraftResponse getDraft(
+      @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
+      @RequestHeader(value = "X-Aio-User", required = false) String userId,
+      @PathVariable String appId) {
+    return AppDraftResponse.from(appService.getOrCreateDraft(tenantId, appId, userId));
+  }
+
+  @PutMapping("/{appId}/draft")
+  public AppDraftResponse saveDraft(
+      @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
+      @RequestHeader(value = "X-Aio-User", required = false) String userId,
+      @PathVariable String appId,
+      @Valid @RequestBody SaveDraftRequest request) {
+    return AppDraftResponse.from(appService.saveDraft(tenantId, appId, request.definitionJson, request.revision, userId));
+  }
+
+  @PostMapping("/{appId}/draft/validate")
+  public DraftValidationResponse validateDraft(
+      @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
+      @RequestHeader(value = "X-Aio-User", required = false) String userId,
+      @PathVariable String appId) {
+    return DraftValidationResponse.from(appService.validateDraft(tenantId, appId, userId));
+  }
+
+  @PostMapping("/{appId}/draft/publish")
+  public DraftPublishResponse publishDraft(
+      @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
+      @RequestHeader(value = "X-Aio-User", required = false) String userId,
+      @PathVariable String appId) {
+    return DraftPublishResponse.from(appService.publishDraft(tenantId, appId, userId));
+  }
+
   @PostMapping("/{appId}/versions")
   public AppVersionResponse saveVersion(
       @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
@@ -144,6 +178,12 @@ public class AdminAppController {
     public String definitionJson;
   }
 
+  public static class SaveDraftRequest {
+    @NotBlank
+    public String definitionJson;
+    public Integer revision;
+  }
+
   public static class PublishRequest {
     @NotBlank
     public String versionId;
@@ -175,6 +215,64 @@ public class AdminAppController {
       response.publishedVersionId = app.getPublishedVersionId();
       response.createdAt = app.getCreatedAt();
       response.updatedAt = app.getUpdatedAt();
+      return response;
+    }
+  }
+
+  public static class AppDraftResponse {
+    public String id;
+    public String appId;
+    public String baseVersionId;
+    public String definitionJson;
+    public String validationJson;
+    public int revision;
+    public boolean dirty;
+    public String autosavedBy;
+    public OffsetDateTime autosavedAt;
+    public OffsetDateTime createdAt;
+    public OffsetDateTime updatedAt;
+
+    static AppDraftResponse from(AiAppDraft draft) {
+      AppDraftResponse response = new AppDraftResponse();
+      response.id = draft.getId();
+      response.appId = draft.getAppId();
+      response.baseVersionId = draft.getBaseVersionId();
+      response.definitionJson = draft.getDefinitionJson();
+      response.validationJson = draft.getValidationJson();
+      response.revision = draft.getRevision();
+      response.dirty = draft.isDirty();
+      response.autosavedBy = draft.getAutosavedBy();
+      response.autosavedAt = draft.getAutosavedAt();
+      response.createdAt = draft.getCreatedAt();
+      response.updatedAt = draft.getUpdatedAt();
+      return response;
+    }
+  }
+
+  public static class DraftValidationResponse {
+    public AppDraftResponse draft;
+    public AppValidationService.ValidationReport report;
+
+    static DraftValidationResponse from(AppService.DraftValidationResult result) {
+      DraftValidationResponse response = new DraftValidationResponse();
+      response.draft = AppDraftResponse.from(result.draft);
+      response.report = result.report;
+      return response;
+    }
+  }
+
+  public static class DraftPublishResponse {
+    public AppResponse app;
+    public AppVersionResponse version;
+    public AppDraftResponse draft;
+    public AppValidationService.ValidationReport report;
+
+    static DraftPublishResponse from(AppService.DraftPublishResult result) {
+      DraftPublishResponse response = new DraftPublishResponse();
+      response.app = AppResponse.from(result.app);
+      response.version = AppVersionResponse.from(result.version);
+      response.draft = AppDraftResponse.from(result.draft);
+      response.report = result.report;
       return response;
     }
   }

@@ -246,9 +246,14 @@ public class RuntimeService {
     Map<String, Object> definition = parseMap(version.getDefinitionJson());
     Map<String, Object> model = castMap(definition.getOrDefault("model", Collections.emptyMap()));
     Map<String, Object> prompt = castMap(definition.getOrDefault("prompt", Collections.emptyMap()));
+    Map<String, Object> ui = castMap(definition.getOrDefault("ui", Collections.emptyMap()));
     String query = stringValue(request.get("query"));
     List<Map<String, Object>> retrieved = retrieveForAgent(app.getTenantId(), app.getWorkspaceId(), definition, query);
     String system = stringValue(prompt.getOrDefault("system", "你是 Aio 平台中的企业智能助手。"));
+    String toolPlan = stringValue(ui.get("toolPlan"));
+    if (!toolPlan.isBlank()) {
+      system += "\n\n执行策略：\n" + toolPlan;
+    }
     if (!retrieved.isEmpty()) {
       system += "\n\n请优先依据以下知识片段回答；如果知识片段不足，再明确说明缺口并给出可执行建议。\n可用知识片段：\n" + joinKnowledge(retrieved);
     }

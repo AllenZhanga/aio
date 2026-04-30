@@ -9,6 +9,8 @@ public interface ApiKeyRepository extends JpaRepository<ApiKey, String> {
 
   List<ApiKey> findByTenantIdOrderByCreatedAtDesc(String tenantId);
 
+  List<ApiKey> findByTenantIdAndWorkspaceIdAndStatus(String tenantId, String workspaceId, String status);
+
   Optional<ApiKey> findByTenantIdAndId(String tenantId, String id);
 
   Optional<ApiKey> findByKeyHashAndStatus(String keyHash, String status);

@@ -11,7 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { ProviderForm, ProviderRecord } from "../types";
-import { ActionBar, Drawer, EntityList, EntityRow, Field, FormSection, StatePanel } from "./ui";
+import { ActionBar, Drawer, EntityList, EntityRow, Field, FormSection, PopConfirm, StatePanel } from "./ui";
 
 const dashScopePreset: ProviderForm = {
   name: "阿里云 DashScope",
@@ -166,7 +166,14 @@ export function ProviderPage(props: {
                     <button className="ghostBtn" disabled={!!props.busyAction} onClick={() => props.editProvider(provider)}><Edit3 size={16} /> 编辑</button>
                     <button className="ghostBtn" disabled={!!props.busyAction} onClick={() => void props.testProvider(provider)}>{props.busyAction === `provider-test-${provider.id}` ? <Loader2 className="spin" size={16} /> : <Play size={16} />} 测试</button>
                     <button className="dangerBtn" disabled={!!props.busyAction || provider.status !== "active"} onClick={() => void props.disableProvider(provider)}>禁用</button>
-                    <button className="dangerTextBtn" disabled={!!props.busyAction} onClick={() => void props.deleteProvider(provider)}>{props.busyAction === `provider-delete-${provider.id}` ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />} 删除</button>
+                    <PopConfirm
+                      title="删除模型供应商"
+                      message={`确认永久删除模型供应商「${provider.name}」？已发布应用如果仍引用该供应商，运行时会失败。`}
+                      confirmText="永久删除"
+                      onConfirm={() => props.deleteProvider(provider)}
+                    >
+                      <button className="dangerTextBtn" disabled={!!props.busyAction}>{props.busyAction === `provider-delete-${provider.id}` ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />} 删除</button>
+                    </PopConfirm>
                   </>
                 }
               />

@@ -87,6 +87,17 @@ public class AdminIdentityController {
     return WorkspaceResponse.from(identityService.createWorkspace(targetTenantId, request.name));
   }
 
+  @DeleteMapping("/workspaces/{workspaceId}")
+  public WorkspaceResponse deleteWorkspace(
+      @RequestHeader(value = "X-Aio-User", required = false) String userId,
+      @PathVariable String workspaceId,
+      @RequestParam(value = "tenantId", required = false) String tenantId) {
+    if (!authService.isWorkspaceAdmin(userId)) {
+      throw new ForbiddenException();
+    }
+    return WorkspaceResponse.from(identityService.deleteWorkspace(workspaceId, tenantId));
+  }
+
   @GetMapping("/api-keys")
   public List<ApiKeyResponse> listApiKeys(
       @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,

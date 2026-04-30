@@ -18,6 +18,7 @@
 
   <properties>
     <java.version>11</java.version>
+    <tika.version>2.9.2</tika.version>
   </properties>
 
   <dependencies>
@@ -36,6 +37,16 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.tika</groupId>
+      <artifactId>tika-core</artifactId>
+      <version>${tika.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.tika</groupId>
+      <artifactId>tika-parsers-standard-package</artifactId>
+      <version>${tika.version}</version>
     </dependency>
     <dependency>
       <groupId>org.flywaydb</groupId>

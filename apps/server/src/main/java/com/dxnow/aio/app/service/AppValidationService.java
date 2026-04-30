@@ -224,34 +224,40 @@ public class AppValidationService {
   private void validateVariables(JsonNode root, Set<String> nodeIds, ValidationReport report) {
     Set<String> allowedRoots = new HashSet<>(nodeIds);
     allowedRoots.add("inputs");
+    allowedRoots.add("vars");
+    allowedRoots.add("nodes");
+    allowedRoots.add("sys");
     allowedRoots.add("metadata");
     allowedRoots.add("env");
     allowedRoots.add("run_id");
     allowedRoots.add("app_id");
     allowedRoots.add("user_id");
     allowedRoots.add("tenant_id");
-    collectVariableReferences(root, allowedRoots, report, "definition");
+    collectVariableReferences(root, allowedRoots, nodeIds, report, "definition");
   }
 
-  private void collectVariableReferences(JsonNode node, Set<String> allowedRoots, ValidationReport report, String path) {
+  private void collectVariableReferences(JsonNode node, Set<String> allowedRoots, Set<String> nodeIds, ValidationReport report, String path) {
     if (node.isTextual()) {
       Matcher matcher = VARIABLE_PATTERN.matcher(node.asText());
       while (matcher.find()) {
         String expression = matcher.group(1);
-        String root = expression.split("\\.")[0];
+        String[] parts = expression.split("\\.");
+        String root = parts[0];
         if (!allowedRoots.contains(root)) {
           report.add("error", "workflow.variable_missing", "变量引用不存在", "表达式 {{" + expression + "}} 无法定位到输入、系统变量或节点输出。", path);
+        } else if ("nodes".equals(root) && (parts.length < 2 || !nodeIds.contains(parts[1]))) {
+          report.add("error", "workflow.variable_node_missing", "节点输出引用不存在", "表达式 {{" + expression + "}} 引用了不存在的节点。", path);
         }
       }
     } else if (node.isObject()) {
       Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
       while (fields.hasNext()) {
         Map.Entry<String, JsonNode> entry = fields.next();
-        collectVariableReferences(entry.getValue(), allowedRoots, report, path + "." + entry.getKey());
+        collectVariableReferences(entry.getValue(), allowedRoots, nodeIds, report, path + "." + entry.getKey());
       }
     } else if (node.isArray()) {
       for (int i = 0; i < node.size(); i++) {
-        collectVariableReferences(node.get(i), allowedRoots, report, path + "[" + i + "]");
+        collectVariableReferences(node.get(i), allowedRoots, nodeIds, report, path + "[" + i + "]");
       }
     }
   }

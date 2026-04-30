@@ -29,6 +29,12 @@ public class KbChunk {
   @Column(columnDefinition = "text")
   private String metadataJson;
   private String vectorId;
+  private String vectorStatus;
+  private String embeddingProviderId;
+  private String embeddingModel;
+  private Integer embeddingDimension;
+  @Column(columnDefinition = "text")
+  private String embeddingVector;
   @Column(nullable = false)
   private OffsetDateTime createdAt;
 
@@ -57,5 +63,15 @@ public class KbChunk {
   public void setMetadataJson(String metadataJson) { this.metadataJson = metadataJson; }
   public String getVectorId() { return vectorId; }
   public void setVectorId(String vectorId) { this.vectorId = vectorId; }
+  public String getVectorStatus() { return vectorStatus; }
+  public void setVectorStatus(String vectorStatus) { this.vectorStatus = vectorStatus; }
+  public String getEmbeddingProviderId() { return embeddingProviderId; }
+  public void setEmbeddingProviderId(String embeddingProviderId) { this.embeddingProviderId = embeddingProviderId; }
+  public String getEmbeddingModel() { return embeddingModel; }
+  public void setEmbeddingModel(String embeddingModel) { this.embeddingModel = embeddingModel; }
+  public Integer getEmbeddingDimension() { return embeddingDimension; }
+  public void setEmbeddingDimension(Integer embeddingDimension) { this.embeddingDimension = embeddingDimension; }
+  public String getEmbeddingVector() { return embeddingVector; }
+  public void setEmbeddingVector(String embeddingVector) { this.embeddingVector = embeddingVector; }
   public OffsetDateTime getCreatedAt() { return createdAt; }
 }

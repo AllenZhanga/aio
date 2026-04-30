@@ -29,18 +29,29 @@ export function buildWorkflowDefinition(
 ) {
   return {
     type: "workflow",
+    version: 1,
     inputs: [
       { name: "question", type: "string", required: true },
       { name: "operator_id", type: "string", required: false },
     ],
+    variables: [],
     nodes: nodes.map((node) => ({
       id: node.id,
       type: node.type,
+      label: node.label,
+      enabled: true,
+      inputs: {},
       config: node.config,
+      outputs: {},
+      runtime: { timeoutSeconds: 60, retry: { maxAttempts: 0 } },
     })),
     edges: edges.map((edge) => ({
+      id: edge.id,
       from: edge.from,
       to: edge.to,
+      sourceHandle: "main",
+      targetHandle: "input",
+      priority: 0,
       ...(edge.condition ? { condition: edge.condition } : {}),
     })),
     ui: {

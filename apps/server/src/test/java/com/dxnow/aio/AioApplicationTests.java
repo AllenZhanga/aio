@@ -2,6 +2,7 @@ package com.dxnow.aio;
 
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.containsString;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -82,6 +83,54 @@ class AioApplicationTests {
   }
 
   @Test
+  void adminCanDeleteWorkspaceAcrossTenants() throws Exception {
+    String adminToken = loginToken();
+    Map<String, Object> tenantRequest = new LinkedHashMap<>();
+    tenantRequest.put("name", "Delete Tenant");
+    tenantRequest.put("code", "delete-tenant-" + System.nanoTime());
+    tenantRequest.put("plan", "private");
+    String tenantResponse = mockMvc.perform(post("/api/aio/admin/tenants")
+            .header("Authorization", "Bearer " + adminToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(tenantRequest)))
+        .andExpect(status().isOk())
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+    String tenantId = extract(tenantResponse, "id");
+
+    Map<String, Object> workspaceRequest = new LinkedHashMap<>();
+    workspaceRequest.put("tenantId", tenantId);
+    workspaceRequest.put("name", "To Delete");
+    String workspaceResponse = mockMvc.perform(post("/api/aio/admin/workspaces")
+            .header("Authorization", "Bearer " + adminToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(workspaceRequest)))
+        .andExpect(status().isOk())
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+    String workspaceId = extract(workspaceResponse, "id");
+
+    String memberToken = loginToken("alice", "alice_dev_password");
+    mockMvc.perform(delete("/api/aio/admin/workspaces/" + workspaceId)
+            .param("tenantId", tenantId)
+            .header("Authorization", "Bearer " + memberToken))
+        .andExpect(status().isForbidden());
+
+    mockMvc.perform(delete("/api/aio/admin/workspaces/" + workspaceId)
+            .param("tenantId", tenantId)
+            .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("deleted"));
+
+    mockMvc.perform(get("/api/aio/admin/workspaces?scope=all")
+            .header("Authorization", "Bearer " + adminToken))
+        .andExpect(status().isOk())
+        .andExpect(content().string(not(containsString(workspaceId))));
+  }
+
+  @Test
   void apiKeySecretIsReturnedOnlyOnCreate() throws Exception {
       String consoleToken = loginToken();
     Map<String, Object> request = new LinkedHashMap<>();
@@ -144,11 +193,69 @@ class AioApplicationTests {
       .andExpect(content().string(not(containsString(appId))));
     }
 
+  @Test
+  void appDraftIsSavedValidatedAndPublishedSeparately() throws Exception {
+    String consoleToken = loginToken();
+    String appResponse = createWorkflowApp(consoleToken);
+    String appId = extract(appResponse, "id");
+
+    String draftResponse = mockMvc.perform(get("/api/aio/admin/apps/" + appId + "/draft")
+        .header("Authorization", "Bearer " + consoleToken))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.appId").value(appId))
+      .andExpect(jsonPath("$.revision").value(1))
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+
+    Map<String, Object> saveRequest = new LinkedHashMap<>();
+    saveRequest.put("revision", Integer.parseInt(String.valueOf(objectMapper.readValue(draftResponse, Map.class).get("revision"))));
+    saveRequest.put("definitionJson", workflowDefinitionWithNamespacedVariables("已发布草稿输出"));
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/aio/admin/apps/" + appId + "/draft")
+        .header("Authorization", "Bearer " + consoleToken)
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(objectMapper.writeValueAsString(saveRequest)))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.dirty").value(true))
+      .andExpect(jsonPath("$.revision").value(2));
+
+    mockMvc.perform(post("/api/aio/admin/apps/" + appId + "/draft/validate")
+        .header("Authorization", "Bearer " + consoleToken))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.report.passed").value(true));
+
+    String publishResponse = mockMvc.perform(post("/api/aio/admin/apps/" + appId + "/draft/publish")
+        .header("Authorization", "Bearer " + consoleToken))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.app.status").value("published"))
+      .andExpect(jsonPath("$.version.versionNo").value(1))
+      .andExpect(jsonPath("$.draft.dirty").value(false))
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+    String publishedVersionId = extractNested(publishResponse, "version", "id");
+
+    saveRequest.remove("revision");
+    saveRequest.put("definitionJson", workflowDefinitionWithNamespacedVariables("未发布草稿输出"));
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/aio/admin/apps/" + appId + "/draft")
+        .header("Authorization", "Bearer " + consoleToken)
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(objectMapper.writeValueAsString(saveRequest)))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.dirty").value(true));
+
+    mockMvc.perform(get("/api/aio/admin/apps/" + appId)
+        .header("Authorization", "Bearer " + consoleToken))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.publishedVersionId").value(publishedVersionId));
+  }
+
     @Test
     void knowledgeDocumentCanBeUploadedAsFile() throws Exception {
     String consoleToken = loginToken();
     Map<String, Object> datasetRequest = new LinkedHashMap<>();
     datasetRequest.put("name", "Upload Dataset");
+    datasetRequest.put("chunkStrategy", "paragraph");
     String datasetResponse = mockMvc.perform(post("/api/aio/admin/datasets")
       .header("Authorization", "Bearer " + consoleToken)
       .contentType(MediaType.APPLICATION_JSON)
@@ -163,15 +270,110 @@ class AioApplicationTests {
       "file",
       "refund.md",
       "text/markdown",
-      "# Refund\n客户可在 7 天内申请退款。".getBytes("UTF-8"));
-    mockMvc.perform(multipart("/api/aio/admin/datasets/" + datasetId + "/documents/upload")
+      "# Refund\n客户可在 7 天内申请退款。\n\n# Exchange\n客户可在 15 天内申请换货。".getBytes("UTF-8"));
+    String documentResponse = mockMvc.perform(multipart("/api/aio/admin/datasets/" + datasetId + "/documents/upload")
       .file(file)
       .header("Authorization", "Bearer " + consoleToken))
       .andExpect(status().isOk())
       .andExpect(jsonPath("$.name").value("refund.md"))
       .andExpect(jsonPath("$.sourceType").value("markdown"))
-      .andExpect(jsonPath("$.indexStatus").value("success"));
+      .andExpect(jsonPath("$.indexStatus").value("success"))
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+    String documentId = extract(documentResponse, "id");
+
+    mockMvc.perform(get("/api/aio/admin/documents/" + documentId + "/chunks")
+      .header("Authorization", "Bearer " + consoleToken))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.parse.actual_strategy").value("paragraph"))
+      .andExpect(jsonPath("$.parse.total_chunks").value(2))
+      .andExpect(jsonPath("$.parse.vector_status").value("lightweight_text_index"))
+      .andExpect(jsonPath("$.chunks[0].id").exists())
+      .andExpect(jsonPath("$.chunks[0].vectorId").exists());
     }
+
+  @Test
+  void knowledgeDatasetAttributesCanBeUpdated() throws Exception {
+    String consoleToken = loginToken();
+    Map<String, Object> datasetRequest = new LinkedHashMap<>();
+    datasetRequest.put("name", "Editable Dataset");
+    datasetRequest.put("description", "before");
+    datasetRequest.put("chunkStrategy", "fixed");
+    String datasetResponse = mockMvc.perform(post("/api/aio/admin/datasets")
+        .header("Authorization", "Bearer " + consoleToken)
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(objectMapper.writeValueAsString(datasetRequest)))
+      .andExpect(status().isOk())
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+    String datasetId = extract(datasetResponse, "id");
+
+    datasetRequest.put("name", "Edited Dataset");
+    datasetRequest.put("description", "after");
+    datasetRequest.put("embeddingModel", "text-embedding-v4");
+    datasetRequest.put("chunkStrategy", "ai");
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/aio/admin/datasets/" + datasetId)
+        .header("Authorization", "Bearer " + consoleToken)
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(objectMapper.writeValueAsString(datasetRequest)))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.name").value("Edited Dataset"))
+      .andExpect(jsonPath("$.description").value("after"))
+      .andExpect(jsonPath("$.embeddingModel").value("text-embedding-v4"))
+      .andExpect(jsonPath("$.chunkStrategy").value("ai"));
+  }
+
+  @Test
+  void knowledgeDocumentDeleteRemovesChunksAndIndexData() throws Exception {
+    String consoleToken = loginToken();
+    Map<String, Object> datasetRequest = new LinkedHashMap<>();
+    datasetRequest.put("name", "Delete Doc Dataset");
+    String datasetResponse = mockMvc.perform(post("/api/aio/admin/datasets")
+        .header("Authorization", "Bearer " + consoleToken)
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(objectMapper.writeValueAsString(datasetRequest)))
+      .andExpect(status().isOk())
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+    String datasetId = extract(datasetResponse, "id");
+
+    Map<String, Object> documentRequest = new LinkedHashMap<>();
+    documentRequest.put("name", "delete-me");
+    documentRequest.put("sourceType", "text:paragraph");
+    documentRequest.put("text", "退款政策：7 天内可退。\n\n换货政策：15 天内可换。");
+    String documentResponse = mockMvc.perform(post("/api/aio/admin/datasets/" + datasetId + "/documents")
+        .header("Authorization", "Bearer " + consoleToken)
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(objectMapper.writeValueAsString(documentRequest)))
+      .andExpect(status().isOk())
+      .andReturn()
+      .getResponse()
+      .getContentAsString();
+    String documentId = extract(documentResponse, "id");
+
+    mockMvc.perform(delete("/api/aio/admin/documents/" + documentId)
+        .header("Authorization", "Bearer " + consoleToken))
+      .andExpect(status().isOk());
+
+    mockMvc.perform(get("/api/aio/admin/datasets/" + datasetId + "/documents")
+        .header("Authorization", "Bearer " + consoleToken))
+      .andExpect(status().isOk())
+      .andExpect(content().string("[]"));
+
+    Map<String, Object> retrieveRequest = new LinkedHashMap<>();
+    retrieveRequest.put("query", "退款");
+    retrieveRequest.put("topK", 5);
+    retrieveRequest.put("scoreThreshold", 0);
+    mockMvc.perform(post("/api/aio/admin/datasets/" + datasetId + "/retrieve-test")
+        .header("Authorization", "Bearer " + consoleToken)
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(objectMapper.writeValueAsString(retrieveRequest)))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.records.length()").value(0));
+  }
 
   @Test
   void publishedAgentCanBeInvokedWithApiKey() throws Exception {
@@ -415,6 +617,26 @@ class AioApplicationTests {
         + "{\"from\":\"start\",\"to\":\"answer\"},"
         + "{\"from\":\"answer\",\"to\":\"confirm\"},"
         + "{\"from\":\"confirm\",\"to\":\"end\",\"condition\":\"{{confirm.action == 'approve'}}\"}"
+        + "]"
+        + "}";
+  }
+
+  private String workflowDefinitionWithNamespacedVariables(String output) {
+    return "{"
+        + "\"type\":\"workflow\","
+        + "\"version\":1,"
+        + "\"inputs\":[{\"name\":\"question\",\"type\":\"string\",\"required\":true}],"
+        + "\"variables\":[],"
+        + "\"nodes\":["
+        + "{\"id\":\"start\",\"type\":\"start\",\"label\":\"开始\",\"config\":{}},"
+        + "{\"id\":\"answer\",\"type\":\"llm\",\"label\":\"生成回复\",\"config\":{\"prompt\":\"建议：{{inputs.question}}\"}},"
+        + "{\"id\":\"confirm\",\"type\":\"user_confirm\",\"label\":\"人工确认\",\"config\":{\"title\":\"确认处理方案\",\"description\":\"{{nodes.answer.text}}\",\"expiresInSeconds\":86400,\"actions\":[{\"key\":\"approve\",\"label\":\"确认\"}]}},"
+        + "{\"id\":\"end\",\"type\":\"end\",\"label\":\"结束\",\"config\":{\"output\":\"" + output + "：{{nodes.answer.text}}\"}}"
+        + "],"
+        + "\"edges\":["
+        + "{\"id\":\"edge_start_answer\",\"from\":\"start\",\"to\":\"answer\"},"
+        + "{\"id\":\"edge_answer_confirm\",\"from\":\"answer\",\"to\":\"confirm\"},"
+        + "{\"id\":\"edge_confirm_end\",\"from\":\"confirm\",\"to\":\"end\",\"condition\":\"{{nodes.confirm.action == 'approve'}}\"}"
         + "]"
         + "}";
   }

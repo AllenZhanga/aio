@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { DatasetRecord, DocumentRecord, RetrieveRecord } from "../types";
+import type { ChunkInspectResponse, DatasetRecord, DocumentRecord, RetrieveRecord } from "../types";
 
 type ConsoleCall = <T>(
   path: string,
@@ -22,6 +22,7 @@ export function useKnowledgePage({
   const [selectedDatasetId, setSelectedDatasetId] = useState("");
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [sourceDocument, setSourceDocument] = useState<DocumentRecord | null>(null);
+  const [chunkInspect, setChunkInspect] = useState<ChunkInspectResponse | null>(null);
   const [retrieveQuery, setRetrieveQuery] = useState("退款政策");
   const [retrieveRecords, setRetrieveRecords] = useState<RetrieveRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -38,11 +39,27 @@ export function useKnowledgePage({
   const [documentSourceMode, setDocumentSourceMode] = useState<"file" | "text">("file");
   const [textChunkMode, setTextChunkMode] = useState("paragraph");
   const [knowledgeFile, setKnowledgeFile] = useState<File | null>(null);
-  const [formOpen, setFormOpen] = useState<"dataset" | "document" | "debug" | "api" | "source" | "">("");
+  const [formOpen, setFormOpen] = useState<"dataset" | "datasetEdit" | "document" | "debug" | "api" | "source" | "chunks" | "datasetInfo" | "">("");
   const [busyAction, setBusyAction] = useState("");
 
   function openDatasetForm() {
+    setNewDatasetName("企业知识库");
+    setNewDatasetDescription("用于企业问答、售后政策和流程指引。");
+    setNewDatasetEmbeddingProviderId("");
+    setNewDatasetEmbeddingModel("text-embedding-v4");
+    setNewDatasetChunkStrategy("fixed");
     setFormOpen("dataset");
+  }
+
+  function openDatasetEdit() {
+    const dataset = datasets.find((item) => item.id === selectedDatasetId);
+    if (!dataset) return;
+    setNewDatasetName(dataset.name || "");
+    setNewDatasetDescription(dataset.description || "");
+    setNewDatasetEmbeddingProviderId(dataset.embeddingProviderId || "");
+    setNewDatasetEmbeddingModel(dataset.embeddingModel || "");
+    setNewDatasetChunkStrategy(dataset.chunkStrategy || "fixed");
+    setFormOpen("datasetEdit");
   }
 
   function openDocumentForm() {
@@ -57,11 +74,16 @@ export function useKnowledgePage({
     setFormOpen("api");
   }
 
+  function openDatasetInfo() {
+    setFormOpen("datasetInfo");
+  }
+
   function backToDatasetList() {
     setSelectedDatasetId("");
     setDocuments([]);
     setRetrieveRecords([]);
     setSourceDocument(null);
+    setChunkInspect(null);
     setFormOpen("");
   }
 
@@ -73,6 +95,19 @@ export function useKnowledgePage({
       setFormOpen("source");
     } catch (nextError) {
       setStatus(nextError instanceof Error ? nextError.message : "源文档加载失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function openDocumentChunks(document: DocumentRecord) {
+    setBusyAction(`document-chunks-${document.id}`);
+    try {
+      const nextInspect = await call<ChunkInspectResponse>(`/api/aio/admin/documents/${document.id}/chunks`);
+      setChunkInspect(nextInspect);
+      setFormOpen("chunks");
+    } catch (nextError) {
+      setStatus(nextError instanceof Error ? nextError.message : "文档分块加载失败");
     } finally {
       setBusyAction("");
     }
@@ -105,6 +140,7 @@ export function useKnowledgePage({
         setDocuments([]);
         setRetrieveRecords([]);
         setSourceDocument(null);
+        setChunkInspect(null);
       }
       setStatus("知识库已同步");
     } catch (nextError) {
@@ -128,6 +164,7 @@ export function useKnowledgePage({
       setDocuments(nextDocuments);
       setRetrieveRecords([]);
       setSourceDocument(null);
+      setChunkInspect(null);
     } catch (nextError) {
       const message =
         nextError instanceof Error ? nextError.message : "文档加载失败";
@@ -166,8 +203,34 @@ export function useKnowledgePage({
     }
   }
 
+  async function updateDataset() {
+    if (!selectedDatasetId) return;
+    setBusyAction("dataset-update");
+    try {
+      const updated = await call<DatasetRecord>(`/api/aio/admin/datasets/${selectedDatasetId}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          name: newDatasetName,
+          description: newDatasetDescription,
+          embeddingProviderId: newDatasetEmbeddingProviderId,
+          embeddingModel: newDatasetEmbeddingModel,
+          chunkStrategy: newDatasetChunkStrategy,
+        }),
+      });
+      setDatasets((current) => current.map((dataset) => dataset.id === updated.id ? updated : dataset));
+      setStatus(`已更新知识库 ${updated.name}`);
+      await refreshKnowledge();
+      setSelectedDatasetId(updated.id);
+      await selectDataset(updated.id);
+      closeForm();
+    } catch (nextError) {
+      setStatus(nextError instanceof Error ? nextError.message : "知识库更新失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
   async function deleteDataset(dataset: DatasetRecord) {
-    if (!window.confirm(`确认删除知识库「${dataset.name}」？删除后会同时清理该知识库下的文档和索引片段。`)) return;
     setBusyAction(`dataset-delete-${dataset.id}`);
     try {
       await call(`/api/aio/admin/datasets/${dataset.id}`, { method: "DELETE" });
@@ -216,11 +279,31 @@ export function useKnowledgePage({
         formData,
       );
       setKnowledgeFile(null);
-      setStatus("文件已上传、解析并写入索引");
+      setStatus("文件已上传，已完成解析、拆分并写入向量入口");
       await selectDataset(selectedDatasetId);
       closeForm();
     } catch (nextError) {
       setStatus(nextError instanceof Error ? nextError.message : "文件上传失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function deleteDocument(document: DocumentRecord) {
+    setBusyAction(`document-delete-${document.id}`);
+    try {
+      await call(`/api/aio/admin/documents/${document.id}`, { method: "DELETE" });
+      if (sourceDocument?.id === document.id) {
+        setSourceDocument(null);
+      }
+      if (chunkInspect?.document?.id === document.id) {
+        setChunkInspect(null);
+        setFormOpen("");
+      }
+      setStatus(`已删除文档 ${document.name}，并清理关联分块/索引数据`);
+      await selectDataset(document.datasetId || selectedDatasetId);
+    } catch (nextError) {
+      setStatus(nextError instanceof Error ? nextError.message : "文档删除失败");
     } finally {
       setBusyAction("");
     }
@@ -250,6 +333,7 @@ export function useKnowledgePage({
     datasets,
     documents,
     sourceDocument,
+    chunkInspect,
     retrieveRecords,
     selectedDatasetId,
     loading,
@@ -279,18 +363,23 @@ export function useKnowledgePage({
     setTextChunkMode,
     setKnowledgeFile,
     openDatasetForm,
+    openDatasetEdit,
     openDocumentForm,
     openDebugDrawer,
     openApiDrawer,
+    openDatasetInfo,
     backToDatasetList,
     openSourceDocument,
+    openDocumentChunks,
     closeForm,
     refreshKnowledge,
     selectDataset,
     createDataset,
+    updateDataset,
     deleteDataset,
     addDocument,
     uploadDocumentFile,
+    deleteDocument,
     retrieveTest,
   };
 }

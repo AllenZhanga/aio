@@ -4,6 +4,7 @@ import com.dxnow.aio.runtime.domain.AiRun;
 import com.dxnow.aio.runtime.domain.AiTrace;
 import com.dxnow.aio.runtime.service.RuntimeService;
 import com.dxnow.aio.security.ApiKeyPrincipal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -49,8 +50,7 @@ public class RuntimeAppController {
         emitter.send(SseEmitter.event().name("run_started").data(Map.of("app_id", appId)));
         AiRun run = runtimeService.chat(principal, appId, request);
         Map<String, Object> response = chatResponse(run);
-        Object answer = response.get("answer");
-        emitter.send(SseEmitter.event().name("message").data(Map.of("answer", answer == null ? "" : answer)));
+        sendAnswerChunks(emitter, response.get("answer"));
         emitter.send(SseEmitter.event().name("run_completed").data(response));
         emitter.complete();
       } catch (Exception exception) {
@@ -63,6 +63,44 @@ public class RuntimeAppController {
       }
     });
     return emitter;
+  }
+
+  private void sendAnswerChunks(SseEmitter emitter, Object answerValue) throws Exception {
+    String answer = answerValue == null ? "" : String.valueOf(answerValue);
+    if (answer.isEmpty()) {
+      emitter.send(SseEmitter.event().name("message").data(Map.of("answer", "", "delta", "")));
+      return;
+    }
+    StringBuilder accumulated = new StringBuilder();
+    int index = 0;
+    for (String chunk : answerChunks(answer)) {
+      accumulated.append(chunk);
+      Map<String, Object> event = new LinkedHashMap<>();
+      event.put("delta", chunk);
+      event.put("answer", accumulated.toString());
+      event.put("index", index++);
+      emitter.send(SseEmitter.event().name("message").data(event));
+    }
+  }
+
+  private List<String> answerChunks(String answer) {
+    List<String> chunks = new ArrayList<>();
+    int start = 0;
+    int length = answer.length();
+    while (start < length) {
+      int end = Math.min(start + 80, length);
+      if (end < length) {
+        int boundary = Math.max(
+            Math.max(answer.lastIndexOf('。', end), answer.lastIndexOf('\n', end)),
+            Math.max(answer.lastIndexOf('，', end), answer.lastIndexOf(' ', end)));
+        if (boundary >= start + 24) {
+          end = boundary + 1;
+        }
+      }
+      chunks.add(answer.substring(start, end));
+      start = end;
+    }
+    return chunks;
   }
 
   private Map<String, Object> chatResponse(AiRun run) {

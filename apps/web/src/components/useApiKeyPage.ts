@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ApiKeyRecord } from "../types";
+import type { ConfirmAction } from "./ui";
 
 type ConsoleCall = <T>(
   path: string,
@@ -9,11 +10,13 @@ type ConsoleCall = <T>(
 
 export function useApiKeyPage({
   call,
+  confirmAction,
   setRuntimeKey,
   setStatus,
   workspaceId,
 }: {
   call: ConsoleCall;
+  confirmAction: ConfirmAction;
   setRuntimeKey: (value: string) => void;
   setStatus: (value: string) => void;
   workspaceId: string;
@@ -78,9 +81,12 @@ export function useApiKeyPage({
 
   async function revokeApiKey(key: ApiKeyRecord) {
     if (
-      !window.confirm(
-        `确认吊销 API Key「${key.name}」？吊销后外部调用会立即失效。`,
-      )
+      !(await confirmAction({
+        title: "吊销 API Key",
+        message: `确认吊销 API Key「${key.name}」？吊销后外部调用会立即失效。`,
+        confirmText: "吊销",
+        tone: "danger",
+      }))
     ) {
       return;
     }
@@ -101,9 +107,6 @@ export function useApiKeyPage({
   async function deleteApiKey(key: ApiKeyRecord) {
     if (key.status === "active") {
       setStatus("请先吊销 API Key，再删除记录");
-      return;
-    }
-    if (!window.confirm(`确认删除已吊销的 API Key「${key.name}」？删除后列表中不再展示该记录。`)) {
       return;
     }
     setBusyAction(`api-key-delete-${key.id}`);

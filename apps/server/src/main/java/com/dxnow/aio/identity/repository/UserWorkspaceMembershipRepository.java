@@ -11,4 +11,6 @@ public interface UserWorkspaceMembershipRepository extends JpaRepository<UserWor
   List<UserWorkspaceMembership> findByUserIdAndStatus(String userId, String status);
 
   void deleteByTenantIdAndUserId(String tenantId, String userId);
+
+  void deleteByTenantIdAndWorkspaceId(String tenantId, String workspaceId);
 }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ProviderForm, ProviderRecord } from "../types";
+import type { ConfirmAction } from "./ui";
 
 type ConsoleCall = <T>(
   path: string,
@@ -49,10 +50,12 @@ const dashScopeProviderForm: ProviderForm = {
 
 export function useProviderPage({
   call,
+  confirmAction,
   setStatus,
   workspaceId,
 }: {
   call: ConsoleCall;
+  confirmAction: ConfirmAction;
   setStatus: (value: string) => void;
   workspaceId: string;
 }) {
@@ -157,13 +160,6 @@ export function useProviderPage({
   }
 
   async function deleteProvider(provider: ProviderRecord) {
-    if (
-      !window.confirm(
-        `确认永久删除模型供应商「${provider.name}」？已发布应用如果仍引用该供应商，运行时会失败。`,
-      )
-    ) {
-      return;
-    }
     setBusyAction(`provider-delete-${provider.id}`);
     try {
       await call(`/api/aio/admin/providers/${provider.id}`, { method: "DELETE" });
@@ -198,7 +194,12 @@ export function useProviderPage({
   }
 
   async function disableProvider(provider: ProviderRecord) {
-    if (!window.confirm(`确认禁用模型供应商「${provider.name}」？`)) return;
+    if (!(await confirmAction({
+      title: "禁用模型供应商",
+      message: `确认禁用模型供应商「${provider.name}」？禁用后新运行将无法继续使用该供应商。`,
+      confirmText: "禁用",
+      tone: "warning",
+    }))) return;
     setBusyAction(`provider-disable-${provider.id}`);
     try {
       await call<ProviderRecord>(

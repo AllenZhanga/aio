@@ -1,4 +1,4 @@
-import { AlertCircle, Bot, Boxes, Building2, Database, Loader2, Play, Plus, Settings2, ShieldCheck, Sparkles, X } from "lucide-react";
+import { AlertCircle, Bot, Boxes, Building2, Database, KeyRound, Loader2, Play, Plus, Settings2, ShieldCheck, Sparkles, UserCheck, X } from "lucide-react";
 import type { AuthSession, CenterView, WorkspaceRecord } from "../types";
 import { Field } from "./ui";
 
@@ -187,7 +187,9 @@ export function SideNav({
   onCreate,
   openApps,
   openObservability,
+  openTasks,
   openKnowledge,
+  openProviders,
   openApiKeys,
   openOrg,
 }: {
@@ -196,18 +198,26 @@ export function SideNav({
   onCreate: () => void;
   openApps: () => void;
   openObservability: () => void;
+  openTasks: () => void;
   openKnowledge: () => void;
+  openProviders: () => void;
   openApiKeys: () => void;
   openOrg: () => void;
 }) {
   return (
     <aside className="sideNav">
       <button className="createBtn" onClick={onCreate}><Plus size={17} /> 创建应用</button>
-      <button className={`sideItem ${activeView === "center" || activeView === "designer" || activeView === "experience" || activeView === "api" ? "active" : ""}`} onClick={openApps}><Boxes size={18} /> 应用管理</button>
+      <p className="sideSectionLabel">构建</p>
+      <button className={`sideItem ${activeView === "center" || activeView === "designer" || activeView === "experience" || activeView === "api" ? "active" : ""}`} onClick={openApps}><Boxes size={18} /> 应用</button>
       <button className={`sideItem ${activeView === "knowledge" ? "active" : ""}`} onClick={openKnowledge}><Database size={18} /> 知识库</button>
-      <button className={`sideItem ${activeView === "apiKeys" ? "active" : ""}`} onClick={openApiKeys}><ShieldCheck size={18} /> API Key</button>
-      <button className={`sideItem ${activeView === "observability" ? "active" : ""}`} onClick={openObservability}><Play size={18} /> 运行观测</button>
-      <button className={`sideItem ${activeView === "org" ? "active" : ""}`} onClick={openOrg}><Building2 size={18} /> 组织运营</button>
+      <p className="sideSectionLabel">运行</p>
+      <button className={`sideItem ${activeView === "observability" ? "active" : ""}`} onClick={openObservability}><Play size={18} /> 运行记录</button>
+      <button className={`sideItem ${activeView === "tasks" ? "active" : ""}`} onClick={openTasks}><UserCheck size={18} /> 人工任务</button>
+      <p className="sideSectionLabel">集成配置</p>
+      <button className={`sideItem ${activeView === "providers" ? "active" : ""}`} onClick={openProviders}><Bot size={18} /> 模型供应商</button>
+      <button className={`sideItem ${activeView === "apiKeys" ? "active" : ""}`} onClick={openApiKeys}><KeyRound size={18} /> API Key</button>
+      <p className="sideSectionLabel">组织</p>
+      <button className={`sideItem ${activeView === "org" ? "active" : ""}`} onClick={openOrg}><Building2 size={18} /> 组织设置</button>
       <p className="sideGroup">当前空间：{session.workspaceId}<br />账号：{session.displayName || session.userId}</p>
     </aside>
   );

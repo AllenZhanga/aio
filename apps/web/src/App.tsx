@@ -20,6 +20,7 @@ import { useProviderPage } from "./components/useProviderPage";
 import { useRunObservabilityPage } from "./components/useRunObservabilityPage";
 import { useTaskCenterPage } from "./components/useTaskCenterPage";
 import { useWorkflowDesignerPage } from "./components/useWorkflowDesignerPage";
+import { useConfirmDialog } from "./components/ui";
 import { safeJsonParse } from "./consoleUtils";
 import {
   navigateApiDocs,
@@ -31,6 +32,7 @@ import {
   navigateObservability,
   navigateOrg,
   navigateProviders,
+  navigateTasks,
   parseRoute,
 } from "./routes";
 import type {
@@ -54,6 +56,7 @@ export default function App() {
   );
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const confirmation = useConfirmDialog();
   const consoleSession = useConsoleSession({
     setStatus,
     onLogout: () => {
@@ -80,17 +83,23 @@ export default function App() {
   const runObservabilityPage = useRunObservabilityPage({ call, setStatus });
   const providerPage = useProviderPage({
     call,
+    confirmAction: confirmation.confirm,
     setStatus,
     workspaceId: authSession?.workspaceId || "default",
   });
   const apiKeyPage = useApiKeyPage({
     call,
+    confirmAction: confirmation.confirm,
     setRuntimeKey,
     setStatus,
     workspaceId: authSession?.workspaceId || "default",
   });
   const orgOpsPage = useOrgOpsPage({ call, setStatus });
-  const knowledgePage = useKnowledgePage({ call, uploadForm, setStatus });
+  const knowledgePage = useKnowledgePage({
+    call,
+    uploadForm,
+    setStatus,
+  });
   const taskCenterPage = useTaskCenterPage({
     call,
     setStatus,
@@ -122,6 +131,9 @@ export default function App() {
     agentDraft,
     validationReport,
     releasePanelOpen,
+    currentDraft,
+    draftSaveState,
+    draftSaveMessage,
     setAppsLoading,
     setSelectedAppId,
     setFilter,
@@ -271,6 +283,7 @@ export default function App() {
       : {
           ...baseAdminHeaders,
           Authorization: `Bearer ${authSession?.token || ""}`,
+          "X-Aio-Console-Token": authSession?.token || "",
           "X-Aio-Tenant": authSession?.tenantId || "default",
           "X-Aio-Workspace": authSession?.workspaceId || "default",
         };
@@ -294,6 +307,7 @@ export default function App() {
       method: "POST",
       headers: {
         Authorization: `Bearer ${authSession?.token || ""}`,
+        "X-Aio-Console-Token": authSession?.token || "",
         "X-Aio-Tenant": authSession?.tenantId || "default",
         "X-Aio-Workspace": authSession?.workspaceId || "default",
       },
@@ -302,12 +316,27 @@ export default function App() {
     const text = await response.text();
     const body = text ? safeJsonParse(text) : null;
     if (response.status === 401) {
+      if (await isConsoleSessionAlive()) {
+        throw new Error(body?.message || body?.error || "文件上传鉴权失败，请重试");
+      }
       consoleSession.clearSession();
       throw new Error("登录已过期，请重新登录");
     }
     if (!response.ok)
       throw new Error(body?.message || body?.error || response.statusText);
     return body as T;
+  }
+
+  async function isConsoleSessionAlive() {
+    if (!authSession?.token) return false;
+    try {
+      const response = await fetch("/api/aio/auth/me", {
+        headers: { Authorization: `Bearer ${authSession.token}` },
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
   }
 
   function openDesigner(app: AppRecord) {
@@ -346,6 +375,12 @@ export default function App() {
     setSelectedAppId("");
     setView("providers");
     navigateProviders();
+  }
+
+  function openTasks() {
+    setSelectedAppId("");
+    setView("tasks");
+    navigateTasks();
   }
 
   function openApiKeys() {
@@ -401,7 +436,9 @@ export default function App() {
           onCreate={() => openCreateModal("agent", "agent")}
           openApps={backToCenter}
           openObservability={() => openObservability()}
+          openTasks={openTasks}
           openKnowledge={openKnowledge}
+          openProviders={openProviders}
           openApiKeys={openApiKeys}
           openOrg={openOrg}
         />
@@ -443,6 +480,7 @@ export default function App() {
             messages={experiencePage.messages}
             input={experiencePage.input}
             feedback={experiencePage.feedback}
+            opening={selectedApp?.type === "agent" ? agentDraft.opening : ""}
             runtimeKey={runtimeKey}
             busyAction={experienceBusyAction}
             setInput={experiencePage.setInput}
@@ -523,6 +561,9 @@ export default function App() {
             setRuntimeKey={setRuntimeKey}
             validationReport={validationReport}
             releasePanelOpen={releasePanelOpen}
+            currentDraft={currentDraft}
+            draftSaveState={draftSaveState}
+            draftSaveMessage={draftSaveMessage}
             pendingPublishDefinitionJson={appLifecyclePage.pendingPublishDefinitionJson}
             setReleasePanelOpen={setReleasePanelOpen}
             publishSelectedApp={publishSelectedApp}
@@ -550,6 +591,7 @@ export default function App() {
           createApp={createApp}
         />
       )}
+      {confirmation.dialog}
     </main>
   );
 }

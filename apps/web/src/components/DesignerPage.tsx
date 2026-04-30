@@ -1,7 +1,7 @@
-import { ArrowLeft, Bot, Code2, Loader2, Play, Rocket, Trash2, Workflow, X } from "lucide-react";
-import type { AgentDraft, AppRecord, DatasetRecord, ModelOption, ValidationReport, WorkflowDesignerProps } from "../types";
+import { ArrowLeft, Bot, CheckCircle2, Code2, Loader2, Play, Rocket, Save, Trash2, Workflow, X } from "lucide-react";
+import type { AgentDraft, AppDraft, AppRecord, DatasetRecord, ModelOption, ValidationReport, WorkflowDesignerProps } from "../types";
 import { AgentDesigner } from "./AgentDesigner";
-import { StatePanel } from "./ui";
+import { PopConfirm, StatePanel } from "./ui";
 import { WorkflowDesigner } from "./WorkflowDesigner";
 
 export function DesignerPage(props: {
@@ -19,6 +19,9 @@ export function DesignerPage(props: {
   setRuntimeKey: (value: string) => void;
   validationReport: ValidationReport | null;
   releasePanelOpen: boolean;
+  currentDraft: AppDraft | null;
+  draftSaveState: "idle" | "unsaved" | "saving" | "saved" | "error";
+  draftSaveMessage: string;
   pendingPublishDefinitionJson: string;
   setReleasePanelOpen: (open: boolean) => void;
   publishSelectedApp: () => Promise<void>;
@@ -56,13 +59,22 @@ export function DesignerPage(props: {
             <p>{props.selectedApp.type} · {statusMeta.label} · {props.selectedApp.id}</p>
           </div>
           {props.definitionLoading && <span className="statusPill"><Loader2 className="spin" size={13} /> 同步版本</span>}
+          {!props.definitionLoading && <DraftStatusPill draft={props.currentDraft} state={props.draftSaveState} message={props.draftSaveMessage} />}
         </div>
         <div className="designerActions">
           <button className="primaryBtn" onClick={() => props.openExperience(props.selectedApp!)}><Play size={16} /> 对话体验</button>
           <button className="ghostBtn" onClick={() => props.openObservability(props.selectedApp!)}><Play size={16} /> 运行观测</button>
           <button className="ghostBtn" onClick={() => props.openApiDocs(props.selectedApp!)}><Code2 size={16} /> API 文档</button>
           <button className="ghostBtn" disabled={!!props.busyAction} onClick={() => void props.invokeSelectedApp()}>{props.busyAction === "run" ? <Loader2 className="spin" size={16} /> : <Play size={16} />} 试运行</button>
-          <button className="dangerBtn" disabled={!!props.busyAction} onClick={() => void props.archiveApp(props.selectedApp!)}>{props.busyAction === `archive-${props.selectedApp.id}` ? <Loader2 className="spin" size={16} /> : <Trash2 size={16} />} 删除</button>
+          <PopConfirm
+            title="删除应用"
+            message={`确认删除（归档）应用「${props.selectedApp.name}」？归档后会从当前应用列表移除，历史版本和运行记录仍保留。`}
+            confirmText="归档应用"
+            placement="bottom-end"
+            onConfirm={() => props.archiveApp(props.selectedApp!)}
+          >
+            <button className="dangerBtn" disabled={!!props.busyAction}>{props.busyAction === `archive-${props.selectedApp.id}` ? <Loader2 className="spin" size={16} /> : <Trash2 size={16} />} 删除</button>
+          </PopConfirm>
           <button className="primaryBtn" disabled={!!props.busyAction} onClick={() => void props.publishSelectedApp()}>{props.busyAction === "publish" ? <Loader2 className="spin" size={16} /> : <Rocket size={16} />} 发布</button>
         </div>
       </header>
@@ -74,6 +86,14 @@ export function DesignerPage(props: {
       {props.releasePanelOpen && <ReleaseCheckPanel report={props.validationReport} canPublish={!!props.pendingPublishDefinitionJson} busy={props.busyAction === "publish-confirm"} close={() => props.setReleasePanelOpen(false)} confirm={() => void props.confirmPublishSelectedApp()} />}
     </section>
   );
+}
+
+function DraftStatusPill({ draft, state, message }: { draft: AppDraft | null; state: "idle" | "unsaved" | "saving" | "saved" | "error"; message: string }) {
+  if (!draft) return <span className="statusPill"><Save size={13} /> 草稿未同步</span>;
+  if (state === "saving") return <span className="statusPill"><Loader2 className="spin" size={13} /> 草稿保存中</span>;
+  if (state === "error") return <span className="statusPill danger"><X size={13} /> 草稿保存失败</span>;
+  if (state === "unsaved") return <span className="statusPill warning"><Save size={13} /> 草稿未保存</span>;
+  return <span className={`statusPill ${draft.dirty ? "warning" : "success"}`}>{draft.dirty ? <Save size={13} /> : <CheckCircle2 size={13} />} {message || (draft.dirty ? "有未发布修改" : "线上版本一致")} · r{draft.revision}</span>;
 }
 
 function ReleaseCheckPanel({ report, canPublish, busy, close, confirm }: { report: ValidationReport | null; canPublish: boolean; busy: boolean; close: () => void; confirm: () => void }) {

@@ -53,6 +53,8 @@
 | [05-codebase-layout.md](./05-codebase-layout.md) | 独立服务代码仓库、目录结构、与 Joget 的代码边界 |
 | [06-console-business-design.md](./06-console-business-design.md) | 控制台界面、SaaS 业务逻辑、应用中心、知识库、API 文档、发布检查与运行观测 |
 | [07-implementation-roadmap.md](./07-implementation-roadmap.md) | 控制台与业务能力的分阶段实施路线、验收标准和开发顺序 |
+| [08-workflow-designer-upgrade-assessment.md](./08-workflow-designer-upgrade-assessment.md) | Workflow 设计器现状评估、画布交互、变量体系、输入输出和改造计划 |
+| [09-workflow-designer-xyflow-development-plan.md](./09-workflow-designer-xyflow-development-plan.md) | 采用 `@xyflow/react` 重构 Workflow 设计器的完整开发规划 |
 
 ## 3. 一句话方案
 

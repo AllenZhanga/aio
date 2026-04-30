@@ -8,5 +8,7 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, String> {
 
   List<Workspace> findByTenantIdOrderByCreatedAtDesc(String tenantId);
 
+  List<Workspace> findByTenantIdAndStatusOrderByCreatedAtDesc(String tenantId, String status);
+
   List<Workspace> findByStatusOrderByCreatedAtDesc(String status);
 }

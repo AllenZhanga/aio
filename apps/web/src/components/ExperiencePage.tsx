@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowLeft, Bot, BookOpen, ClipboardCheck, Hash, Loader2, Play, Radio, Settings2, Sparkles, Workflow } from "lucide-react";
+import { Activity, AlertCircle, ArrowLeft, Bot, BookOpen, ClipboardCheck, FileText, Hash, Loader2, Play, Radio, Settings2, Sparkles, Workflow } from "lucide-react";
 import type { AppRecord, ExperienceMessage, RetrieveRecord, RuntimeUsage, RuntimeWaitTask } from "../types";
 import { Field, StatePanel } from "./ui";
 
@@ -9,6 +9,7 @@ export function ExperiencePage(props: {
   messages: ExperienceMessage[];
   input: string;
   feedback: string;
+  opening: string;
   runtimeKey: string;
   busyAction: string;
   setInput: (value: string) => void;
@@ -29,6 +30,7 @@ export function ExperiencePage(props: {
 
   const app = props.selectedApp;
   const canSend = !!props.runtimeKey && app.status === "published" && !!props.input.trim() && props.busyAction !== "experience-send";
+  const latestAssistant = [...props.messages].reverse().find((message) => message.role === "assistant");
   return (
     <section className="experiencePane">
       <div className="experienceHero">
@@ -55,15 +57,23 @@ export function ExperiencePage(props: {
             <dt>Runtime Key</dt><dd>{props.runtimeKey ? "已选择" : "未选择"}</dd>
           </dl>
           <p>{app.type === "workflow" ? "体验页使用 API Key 菜单中创建的 Key。流程到达人工确认节点时，等待卡片会直接出现在对话流里。" : "体验页使用 API Key 菜单中创建的 Key，并通过流式响应展示 Agent 回复。"}</p>
+          <RuntimeSnapshot message={latestAssistant} busy={props.busyAction === "experience-send"} />
         </aside>
         <main className="chatConsole">
           <div className="chatFeed">
             {!props.messages.length && (
-              <div className="chatEmpty">
-                <Sparkles size={26} />
-                <strong>开始一次真实应用体验</strong>
-                <span>{app.type === "workflow" ? "输入业务问题，流程暂停时会在这里等待用户反馈。" : "输入问题，直接查看 Agent 的最终回复。"}</span>
-              </div>
+              app.type === "agent" && props.opening.trim() ? (
+                <article className="chatBubble assistant openingBubble">
+                  <div className="bubbleMeta">AI 应用 · 开场白</div>
+                  <div className="bubbleText">{renderMessageText(props.opening)}</div>
+                </article>
+              ) : (
+                <div className="chatEmpty">
+                  <Sparkles size={26} />
+                  <strong>开始一次真实应用体验</strong>
+                  <span>{app.type === "workflow" ? "输入业务问题，流程暂停时会在这里等待用户反馈。" : "输入问题，直接查看 Agent 的最终回复。"}</span>
+                </div>
+              )
             )}
             {props.messages.map((message) => <ExperienceBubble key={message.id} message={message} feedback={props.feedback} busyAction={props.busyAction} setFeedback={props.setFeedback} submitWait={props.submitWait} />)}
             {props.busyAction === "experience-send" && <div className="chatThinking"><Loader2 className="spin" size={16} /> AI 应用正在处理...</div>}
@@ -84,6 +94,31 @@ export function ExperiencePage(props: {
         </main>
       </div>
     </section>
+  );
+}
+
+function RuntimeSnapshot({ message, busy }: { message?: ExperienceMessage; busy: boolean }) {
+  const usage = message?.usage;
+  const knowledgeCount = message?.knowledge?.length || 0;
+  const hasRuntime = !!message?.runId || !!message?.conversationId || !!usage || knowledgeCount > 0 || busy;
+  return (
+    <div className="runtimeSnapshot">
+      <div className="runtimeSnapshotHeader">
+        <Activity size={15} />
+        <strong>本次运行</strong>
+        <span className={busy || message?.streaming ? "live" : hasRuntime ? "done" : "idle"}>{busy || message?.streaming ? "接收中" : hasRuntime ? "已完成" : "待开始"}</span>
+      </div>
+      <div className="runtimeSnapshotGrid">
+        <article><span>Total Tokens</span><strong>{formatNumber(usage?.total_tokens)}</strong></article>
+        <article><span>Prompt</span><strong>{formatNumber(usage?.prompt_tokens)}</strong></article>
+        <article><span>Completion</span><strong>{formatNumber(usage?.completion_tokens)}</strong></article>
+        <article><span>引用片段</span><strong>{knowledgeCount || "—"}</strong></article>
+      </div>
+      <dl>
+        <dt>Conversation</dt><dd>{message?.conversationId || "—"}</dd>
+        <dt>Run</dt><dd>{message?.runId || "—"}</dd>
+      </dl>
+    </div>
   );
 }
 
@@ -128,7 +163,7 @@ function ExperienceBubble(props: {
 }
 
 function RuntimeMessageDetails({ message }: { message: ExperienceMessage }) {
-  const hasStats = !!message.conversationId || !!message.usage?.total_tokens || !!message.runId;
+  const hasStats = !!message.conversationId || !!message.runId || !!message.status || hasUsage(message.usage);
   const hasKnowledge = !!message.knowledge?.length;
   if (!hasStats && !hasKnowledge) return null;
   return (
@@ -144,9 +179,9 @@ function UsageStrip({ runId, conversationId, usage }: { runId?: string; conversa
     <div className="bubbleStats">
       {runId && <span><Hash size={13} /> {runId}</span>}
       {conversationId && <span>Conversation {conversationId}</span>}
-      {usage?.prompt_tokens !== undefined && <span>Prompt {usage.prompt_tokens}</span>}
-      {usage?.completion_tokens !== undefined && <span>Completion {usage.completion_tokens}</span>}
-      {usage?.total_tokens !== undefined && <strong>Token {usage.total_tokens}</strong>}
+      {usage?.prompt_tokens !== undefined && <span>Prompt {formatNumber(usage.prompt_tokens)}</span>}
+      {usage?.completion_tokens !== undefined && <span>Completion {formatNumber(usage.completion_tokens)}</span>}
+      {usage?.total_tokens !== undefined && <strong>Token {formatNumber(usage.total_tokens)}</strong>}
     </div>
   );
 }
@@ -158,7 +193,7 @@ function KnowledgeReferences({ records }: { records: RetrieveRecord[] }) {
       <div className="bubbleEvidenceList">
         {records.map((record, index) => (
           <article key={`${record.chunk_id}-${index}`}>
-            <div><strong>{sourceName(record.metadata) || record.document_id}</strong><span>{scoreLabel(record.score)}</span></div>
+            <div><strong><FileText size={13} /> {sourceName(record.metadata) || record.document_id}</strong><span>{scoreLabel(record.score)}</span></div>
             <p>{record.content}</p>
             <small>{record.document_id} · {record.chunk_id}</small>
           </article>
@@ -197,6 +232,14 @@ function sourceName(metadata?: string) {
 function scoreLabel(score: number) {
   if (!Number.isFinite(score)) return "命中";
   return `${Math.round(score * 100)}%`;
+}
+
+function hasUsage(usage?: RuntimeUsage) {
+  return usage?.prompt_tokens !== undefined || usage?.completion_tokens !== undefined || usage?.total_tokens !== undefined;
+}
+
+function formatNumber(value?: number) {
+  return value === undefined ? "—" : new Intl.NumberFormat("zh-CN").format(value);
 }
 
 function waitTaskActions(task: RuntimeWaitTask) {

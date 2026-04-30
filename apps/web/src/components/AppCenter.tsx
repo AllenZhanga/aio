@@ -1,6 +1,6 @@
 import { AlertCircle, Bot, Loader2, Play, Plus, RefreshCw, Search, Trash2, Workflow } from "lucide-react";
 import type { AgentMode, AppKind, AppRecord, AuthSession } from "../types";
-import { ActionBar, Modal, StatePanel } from "./ui";
+import { ActionBar, Modal, PopConfirm, StatePanel } from "./ui";
 
 const agentModes: Array<{
   mode: AgentMode;
@@ -153,16 +153,16 @@ function AppTile({
           >
             <Play size={14} /> 体验
           </button>
-          <button
-            className="dangerTextBtn"
-            disabled={archiving}
-            onClick={(event) => {
-              event.stopPropagation();
-              void archiveApp(app);
-            }}
+          <PopConfirm
+            title="删除应用"
+            message={`确认删除（归档）应用「${app.name}」？归档后会从当前应用列表移除，历史版本和运行记录仍保留。`}
+            confirmText="归档应用"
+            onConfirm={() => archiveApp(app)}
           >
-            {archiving ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />} 删除
-          </button>
+            <button className="dangerTextBtn" disabled={archiving}>
+              {archiving ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />} 删除
+            </button>
+          </PopConfirm>
         </div>
       </div>
     </article>

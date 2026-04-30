@@ -1,6 +1,6 @@
-import { AlertCircle, Building2, ClipboardCheck, Code2, Loader2, Plus, RefreshCw, ShieldCheck } from "lucide-react";
+import { AlertCircle, Building2, ClipboardCheck, Code2, Loader2, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import type { ApiKeyRecord, AuditEvent, AuthSession, TenantRecord, UserRecord, UsageSummary, WorkspaceRecord } from "../types";
-import { ActionBar, Drawer, EntityList, EntityRow, Field, StatePanel } from "./ui";
+import { ActionBar, Drawer, EntityList, EntityRow, Field, StatePanel, useConfirmDialog } from "./ui";
 
 export function OrgOpsPage(props: {
   tenants: TenantRecord[];
@@ -41,13 +41,40 @@ export function OrgOpsPage(props: {
   closeForm: () => void;
   createTenant: () => Promise<void>;
   createWorkspace: () => Promise<void>;
+  deleteWorkspace: (workspace: WorkspaceRecord) => Promise<void>;
   createUser: () => Promise<void>;
   toggleUserWorkspace: (workspaceId: string) => void;
   refreshOrg: () => Promise<void>;
 }) {
   const usage = props.usage;
-  const roleLabel = props.session.role === "admin" || (!props.session.role && props.session.userId === "admin") ? "管理员" : "成员";
+  const isAdmin = props.session.role === "admin" || (!props.session.role && props.session.userId === "admin");
+  const roleLabel = isAdmin ? "管理员" : "成员";
   const activeKeys = props.apiKeys.filter((key) => key.status === "active").length;
+  const confirmation = useConfirmDialog();
+  const tenantIds = new Set(props.tenants.map((tenant) => tenant.id));
+  const workspaceLabelById = new Map(props.workspaces.map((workspace) => [workspace.id, workspace.name || workspace.id]));
+  const workspaceGroups: Array<{ tenant: TenantRecord | null; workspaces: WorkspaceRecord[] }> = [
+    ...props.tenants.map((tenant) => ({
+      tenant,
+      workspaces: props.workspaces.filter((workspace) => workspace.tenantId === tenant.id),
+    })),
+  ];
+  const ungroupedWorkspaces = props.workspaces.filter((workspace) => !tenantIds.has(workspace.tenantId));
+  if (ungroupedWorkspaces.length) {
+    workspaceGroups.push({ tenant: null, workspaces: ungroupedWorkspaces });
+  }
+
+  async function requestDeleteWorkspace(workspace: WorkspaceRecord) {
+    const confirmed = await confirmation.confirm({
+      title: "删除工作空间",
+      message: `确认删除「${workspace.name || workspace.id}」？该空间会从组织视图移除，用户授权会被清理，空间级 API Key 会被撤销。`,
+      confirmText: "删除空间",
+      tone: "danger",
+    });
+    if (confirmed) {
+      await props.deleteWorkspace(workspace);
+    }
+  }
 
   return (
     <section className="workspacePane orgPane">
@@ -99,45 +126,62 @@ export function OrgOpsPage(props: {
             <ShieldCheck size={18} />
             <div><h2>空间与权限边界</h2><p>应用、知识库、模型供应商、Key 和运行记录都按 workspace 隔离。</p></div>
           </div>
-          <EntityList className="scopeStack">
-            {props.tenants.map((tenant) => (
-              <EntityRow
-                key={tenant.id}
-                title={tenant.name}
-                subtitle={`${tenant.code} · ${tenant.plan}`}
-                status={tenant.status}
-                statusTone="success"
-                meta="Tenant"
-                actions={<button className="ghostBtn" onClick={() => props.openWorkspaceForm(tenant.id)}><Plus size={16} /> 加空间</button>}
-              />
+          <div className="orgScopeSummary">
+            <article><strong>{props.tenants.length}</strong><span>租户</span></article>
+            <article><strong>{props.workspaces.length}</strong><span>空间</span></article>
+            <article><strong>{props.workspaces.filter((workspace) => workspace.id !== props.session.workspaceId).length}</strong><span>可管理</span></article>
+          </div>
+          <div className="scopeStack orgScrollableList">
+            {workspaceGroups.map(({ tenant, workspaces }) => (
+              <article className="tenantScopeGroup" key={tenant?.id || "ungrouped-workspaces"}>
+                <header>
+                  <div>
+                    <strong>{tenant?.name || "未归档租户"}</strong>
+                    <small>{tenant ? `${tenant.code} · ${tenant.plan}` : "这些空间所属租户未出现在当前租户列表中"}</small>
+                  </div>
+                  <span className={`runStatus ${tenant?.status === "active" || !tenant ? "success" : "cancelled"}`}>{tenant?.status || "active"}</span>
+                  <em>{workspaces.length} 空间</em>
+                  {tenant && <button className="ghostBtn" onClick={() => props.openWorkspaceForm(tenant.id)}><Plus size={16} /> 加空间</button>}
+                </header>
+                <div className="scopeWorkspaceList">
+                  {workspaces.map((workspace) => (
+                    <EntityRow
+                      key={workspace.id}
+                      active={workspace.id === props.session.workspaceId}
+                      title={workspace.name || workspace.id}
+                      subtitle={`${workspace.tenantId} · ${workspace.id}`}
+                      status={workspace.id === props.session.workspaceId ? "当前空间" : workspace.status}
+                      statusTone={workspace.status === "active" ? "success" : "cancelled"}
+                      meta="Workspace"
+                      actions={isAdmin && workspace.id !== props.session.workspaceId ? (
+                        <button className="dangerTextBtn" disabled={!!props.busyAction} onClick={() => void requestDeleteWorkspace(workspace)}>
+                          {props.busyAction === `workspace-delete-${workspace.id}` ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />} 删除
+                        </button>
+                      ) : undefined}
+                    />
+                  ))}
+                  {!workspaces.length && <div className="scopeEmpty">暂无空间，点击右侧“加空间”创建。</div>}
+                </div>
+              </article>
             ))}
-            {props.workspaces.map((workspace) => (
-              <EntityRow
-                key={workspace.id}
-                active={workspace.id === props.session.workspaceId}
-                title={workspace.name || workspace.id}
-                subtitle={workspace.tenantId}
-                status={workspace.id === props.session.workspaceId ? "当前空间" : workspace.status}
-                statusTone={workspace.status === "active" ? "success" : "cancelled"}
-                meta="Workspace"
-              />
-            ))}
-          </EntityList>
+            {!workspaceGroups.length && <StatePanel title="暂无租户空间" text="先新增租户，再为租户创建工作空间。" />}
+          </div>
         </section>
         <section className="designCard">
           <div className="sectionTitle">
             <Building2 size={18} />
             <div><h2>用户与空间授权</h2><p>创建可登录用户，并分配其可使用的租户和工作空间。</p></div>
           </div>
-          <EntityList>
+          <EntityList className="userAuthList orgScrollableList">
             {props.users.map((user) => (
               <EntityRow
                 key={user.id}
                 title={user.displayName || user.email}
                 subtitle={`${user.email} · ${user.tenantId}`}
+                details={workspaceAccessSummary(user.workspaceIds, workspaceLabelById)}
                 status={user.role}
                 statusTone={user.role === "admin" ? "warning" : "success"}
-                meta={`空间：${user.workspaceIds.join(", ") || "未分配"}`}
+                meta={user.workspaceIds.length ? `授权 ${user.workspaceIds.length} 空间` : "未分配"}
               />
             ))}
             {!props.users.length && <StatePanel title="暂无用户" text="新增用户后，可使用邮箱和密码登录并进入授权空间。" />}
@@ -280,8 +324,15 @@ export function OrgOpsPage(props: {
           </div>
         </div>
       </Drawer>
+      {confirmation.dialog}
     </section>
   );
+}
+
+function workspaceAccessSummary(workspaceIds: string[], workspaceLabelById: Map<string, string>) {
+  if (!workspaceIds.length) return "空间：未分配";
+  const visible = workspaceIds.slice(0, 3).map((workspaceId) => workspaceLabelById.get(workspaceId) || workspaceId).join("、");
+  return workspaceIds.length > 3 ? `空间：${visible} 等 ${workspaceIds.length} 个` : `空间：${visible}`;
 }
 
 function formatDate(value?: string) {

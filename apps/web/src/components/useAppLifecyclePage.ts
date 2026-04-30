@@ -1,13 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { buildAgentDefinition } from "../appDefinitions";
 import { navigateCenter, navigateDesigner } from "../routes";
 import type {
   AgentDraft,
   AgentMode,
+  AppDraft,
   AppKind,
   AppRecord,
-  AppVersion,
   CenterView,
+  DraftPublishResponse,
+  DraftValidationResponse,
   ValidationReport,
 } from "../types";
 import { normalizeAgentMode } from "./WorkflowDesigner";
@@ -66,6 +68,10 @@ export function useAppLifecyclePage({
   const [validationReport, setValidationReport] = useState<ValidationReport | null>(null);
   const [releasePanelOpen, setReleasePanelOpen] = useState(false);
   const [pendingPublishDefinitionJson, setPendingPublishDefinitionJson] = useState("");
+  const [currentDraft, setCurrentDraft] = useState<AppDraft | null>(null);
+  const [draftSaveState, setDraftSaveState] = useState<"idle" | "unsaved" | "saving" | "saved" | "error">("idle");
+  const [draftSaveMessage, setDraftSaveMessage] = useState("");
+  const lastSavedDefinitionRef = useRef("");
 
   const selectedApp = useMemo(
     () => apps.find((item) => item.id === selectedAppId),
@@ -102,17 +108,16 @@ export function useAppLifecyclePage({
   async function loadAppDefinition(app: AppRecord) {
     setDefinitionLoading(true);
     try {
-      const versions = await call<AppVersion[]>(
-        `/api/aio/admin/apps/${app.id}/versions`,
-      );
-      const version =
-        versions.find((item) => item.id === app.publishedVersionId) ||
-        versions[0];
-      if (!version?.definitionJson) {
+      const draft = await call<AppDraft>(`/api/aio/admin/apps/${app.id}/draft`);
+      setCurrentDraft(draft);
+      setDraftSaveState("saved");
+      setDraftSaveMessage(draft.dirty ? "草稿已保存，有未发布修改" : "草稿与线上版本一致");
+      lastSavedDefinitionRef.current = draft.definitionJson;
+      if (!draft.definitionJson) {
         if (app.type === "workflow") resetWorkflowCanvas();
         return;
       }
-      const definition = JSON.parse(version.definitionJson) as Record<string, any>;
+      const definition = JSON.parse(draft.definitionJson) as Record<string, any>;
       if (app.type === "agent") {
         setAgentDraft({
           ...defaultAgentDraft,
@@ -141,6 +146,50 @@ export function useAppLifecyclePage({
     } finally {
       setDefinitionLoading(false);
     }
+  }
+
+  useEffect(() => {
+    if (!selectedApp || !currentDraft || currentDraft.appId !== selectedApp.id || definitionLoading) return undefined;
+    const definitionJson = selectedAppDefinitionJson(selectedApp);
+    if (definitionJson === lastSavedDefinitionRef.current) return undefined;
+    setDraftSaveState("unsaved");
+    setDraftSaveMessage("草稿有未保存修改");
+    const handle = window.setTimeout(() => {
+      void saveDraftDefinition(definitionJson);
+    }, 900);
+    return () => window.clearTimeout(handle);
+  }, [selectedApp?.id, selectedApp?.type, currentDraft?.appId, currentDraft?.revision, definitionLoading, workflowDefinition, agentDraft]);
+
+  async function saveDraftDefinition(definitionJson: string) {
+    if (!selectedApp || !currentDraft || currentDraft.appId !== selectedApp.id) return null;
+    setDraftSaveState("saving");
+    setDraftSaveMessage("草稿保存中");
+    try {
+      const draft = await call<AppDraft>(`/api/aio/admin/apps/${selectedApp.id}/draft`, {
+        method: "PUT",
+        body: JSON.stringify({ definitionJson }),
+      });
+      setCurrentDraft(draft);
+      lastSavedDefinitionRef.current = definitionJson;
+      setDraftSaveState("saved");
+      setDraftSaveMessage("草稿已保存，有未发布修改");
+      return draft;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "草稿保存失败";
+      setDraftSaveState("error");
+      setDraftSaveMessage(message);
+      setStatus(message);
+      return null;
+    }
+  }
+
+  async function saveCurrentDraftNow() {
+    if (!selectedApp) throw new Error("请先选择一个应用");
+    const definitionJson = selectedAppDefinitionJson(selectedApp);
+    if (definitionJson === lastSavedDefinitionRef.current && currentDraft) return currentDraft;
+    const saved = await saveDraftDefinition(definitionJson);
+    if (!saved) throw new Error("草稿保存失败，请修正后重试");
+    return saved;
   }
 
   function openCreateModal(type: AppKind, mode: AgentMode = "agent") {
@@ -186,13 +235,13 @@ export function useAppLifecyclePage({
     setPendingPublishDefinitionJson("");
     try {
       if (!selectedApp) throw new Error("请先选择一个应用");
-      const definitionJson = selectedAppDefinitionJson(selectedApp);
-      const report = await runReleaseCheck(definitionJson);
+      const draft = await saveCurrentDraftNow();
+      const report = await runReleaseCheck();
       if (!report.passed) {
         setStatus(`发布检查未通过：${report.blockingErrors} 个阻断错误`);
         return;
       }
-      setPendingPublishDefinitionJson(definitionJson);
+      setPendingPublishDefinitionJson(draft.definitionJson);
       setStatus("发布检查通过，请在侧边栏确认发布");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "发布检查失败");
@@ -206,17 +255,15 @@ export function useAppLifecyclePage({
     try {
       if (!selectedApp) throw new Error("请先选择一个应用");
       if (!pendingPublishDefinitionJson) throw new Error("请先点击发布并通过发布检查");
-      const version = await call<{ id: string; versionNo: number }>(
-        `/api/aio/admin/apps/${selectedApp.id}/versions`,
-        { method: "POST", body: JSON.stringify({ definitionJson: pendingPublishDefinitionJson }) },
-      );
-      await call(`/api/aio/admin/apps/${selectedApp.id}/publish`, {
-        method: "POST",
-        body: JSON.stringify({ versionId: version.id }),
-      });
+      const published = await call<DraftPublishResponse>(`/api/aio/admin/apps/${selectedApp.id}/draft/publish`, { method: "POST" });
+      setCurrentDraft(published.draft);
+      setValidationReport(published.report);
+      lastSavedDefinitionRef.current = published.draft.definitionJson;
+      setDraftSaveState("saved");
+      setDraftSaveMessage("草稿与线上版本一致");
       setPendingPublishDefinitionJson("");
       setReleasePanelOpen(false);
-      setStatus(`${selectedApp.name} 已发布 v${version.versionNo}，发布检查通过`);
+      setStatus(`${selectedApp.name} 已发布 v${published.version.versionNo}，线上版本已切换`);
       await refreshApps();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "发布失败");
@@ -229,7 +276,8 @@ export function useAppLifecyclePage({
     setBusyAction("validate");
     try {
       if (!selectedApp) throw new Error("请先选择一个应用");
-      const report = await runReleaseCheck(selectedAppDefinitionJson(selectedApp));
+      await saveCurrentDraftNow();
+      const report = await runReleaseCheck();
       setStatus(
         report.passed
           ? `发布检查通过：${report.warnings} 个警告`
@@ -242,25 +290,16 @@ export function useAppLifecyclePage({
     }
   }
 
-  async function runReleaseCheck(definitionJson: string) {
+  async function runReleaseCheck() {
     if (!selectedApp) throw new Error("请先选择一个应用");
-    const report = await call<ValidationReport>(
-      `/api/aio/admin/apps/${selectedApp.id}/validate`,
-      { method: "POST", body: JSON.stringify({ definitionJson }) },
-    );
-    setValidationReport(report);
+    const response = await call<DraftValidationResponse>(`/api/aio/admin/apps/${selectedApp.id}/draft/validate`, { method: "POST" });
+    setCurrentDraft(response.draft);
+    setValidationReport(response.report);
     setReleasePanelOpen(true);
-    return report;
+    return response.report;
   }
 
   async function archiveApp(app: AppRecord) {
-    if (
-      !window.confirm(
-        `确认删除（归档）应用「${app.name}」？归档后会从当前应用列表移除，历史版本和运行记录仍保留。`,
-      )
-    ) {
-      return;
-    }
     setBusyAction(`archive-${app.id}`);
     try {
       await call(`/api/aio/admin/apps/${app.id}/archive`, { method: "POST" });
@@ -337,6 +376,9 @@ export function useAppLifecyclePage({
     validationReport,
     releasePanelOpen,
     pendingPublishDefinitionJson,
+    currentDraft,
+    draftSaveState,
+    draftSaveMessage,
     setApps,
     setAppsLoading,
     setSelectedAppId,

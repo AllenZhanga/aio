@@ -69,7 +69,7 @@ public class IdentityService {
 
   public List<Workspace> listWorkspaces(String tenantId) {
     requireTenant(tenantId);
-    return workspaceRepository.findByTenantIdOrderByCreatedAtDesc(tenantId);
+    return workspaceRepository.findByTenantIdAndStatusOrderByCreatedAtDesc(tenantId, "active");
   }
 
   public List<Workspace> listAllWorkspaces() {
@@ -84,6 +84,22 @@ public class IdentityService {
     workspace.setTenantId(tenantId);
     workspace.setName(name);
     workspace.setStatus("active");
+    return workspaceRepository.save(workspace);
+  }
+
+  @Transactional
+  public Workspace deleteWorkspace(String workspaceId, String tenantId) {
+    Workspace workspace = workspaceRepository.findById(workspaceId)
+        .filter(item -> tenantId == null || tenantId.isBlank() || tenantId.equals(item.getTenantId()))
+        .orElseThrow(() -> new EntityNotFoundException("Workspace not found"));
+    if (!"deleted".equals(workspace.getStatus())) {
+      membershipRepository.deleteByTenantIdAndWorkspaceId(workspace.getTenantId(), workspace.getId());
+      for (ApiKey apiKey : apiKeyRepository.findByTenantIdAndWorkspaceIdAndStatus(workspace.getTenantId(), workspace.getId(), "active")) {
+        apiKey.revoke();
+        apiKeyRepository.save(apiKey);
+      }
+      workspace.setStatus("deleted");
+    }
     return workspaceRepository.save(workspace);
   }
 

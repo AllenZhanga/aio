@@ -57,6 +57,10 @@ export function navigateProviders() {
   navigateHash("#/providers");
 }
 
+export function navigateTasks() {
+  navigateHash("#/tasks");
+}
+
 export function navigateApiKeys() {
   navigateHash("#/api-keys");
 }

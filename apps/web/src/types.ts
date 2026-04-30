@@ -38,6 +38,29 @@ export type AppVersion = {
   versionNo: number;
   definitionJson: string;
 };
+export type AppDraft = {
+  id: string;
+  appId: string;
+  baseVersionId?: string | null;
+  definitionJson: string;
+  validationJson?: string | null;
+  revision: number;
+  dirty: boolean;
+  autosavedBy?: string | null;
+  autosavedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+export type DraftValidationResponse = {
+  draft: AppDraft;
+  report: ValidationReport;
+};
+export type DraftPublishResponse = {
+  app: AppRecord;
+  version: AppVersion;
+  draft: AppDraft;
+  report: ValidationReport;
+};
 export type AgentDraft = {
   mode: AgentMode;
   providerAccountId: string;
@@ -72,6 +95,12 @@ export type WorkflowNode = {
   y: number;
   config: Record<string, unknown>;
 };
+export type WorkflowAddNodeOptions = {
+  position?: { x: number; y: number };
+  connectFrom?: string;
+  connectTo?: string;
+  replaceEdgeId?: string;
+};
 export type WorkflowEdge = {
   id: string;
   from: string;
@@ -88,7 +117,8 @@ export type WorkflowDesignerProps = {
   selectedNode?: WorkflowNode;
   selectedEdge?: WorkflowEdge;
   workflowDefinition: Record<string, unknown>;
-  addNode: (type: WorkflowNodeType) => void;
+  addNode: (type: WorkflowNodeType, options?: WorkflowAddNodeOptions) => void;
+  connectNodes: (from: string, to: string) => void;
   removeNode: (nodeId: string) => void;
   removeEdge: (edgeId: string) => void;
   updateEdge: (edgeId: string, condition: string) => void;
@@ -172,6 +202,42 @@ export type DocumentRecord = {
   errorMessage?: string;
   createdAt?: string;
   updatedAt?: string;
+};
+export type ChunkRecord = {
+  id: string;
+  documentId: string;
+  chunkNo: number;
+  content: string;
+  contentChars: number;
+  tokenCount?: number;
+  metadata?: string;
+  vectorId?: string;
+  vectorStatus?: string;
+  embeddingProviderId?: string;
+  embeddingModel?: string;
+  embeddingDimension?: number;
+  createdAt?: string;
+};
+export type ChunkInspectResponse = {
+  document: DocumentRecord;
+  dataset: DatasetRecord;
+  parse: {
+    source_type?: string;
+    dataset_strategy?: string;
+    actual_strategy?: string;
+    algorithm?: string;
+    chunk_size?: number;
+    source_chars?: number;
+    total_chunks?: number;
+    parse_status?: string;
+    index_status?: string;
+    embedding_provider_id?: string;
+    embedding_model?: string;
+    vector_status?: string;
+    vector_note?: string;
+    embedded_chunks?: number;
+  };
+  chunks: ChunkRecord[];
 };
 export type RetrieveRecord = {
   chunk_id: string;
