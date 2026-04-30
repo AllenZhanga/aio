@@ -17,7 +17,7 @@ export function buildAgentDefinition(draft: AgentDraft) {
       scoreThreshold: draft.knowledgeScoreThreshold,
     })),
     tools: [],
-    memory: { enabled: true, windowMessages: 10 },
+    memory: { enabled: draft.memoryEnabled, windowMessages: draft.memoryWindowMessages },
     output: { format: "text" },
     ui: { opening: draft.opening, toolPlan: draft.toolPlan },
   };

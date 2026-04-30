@@ -27,6 +27,8 @@ const defaultAgentDraft: AgentDraft = {
   opening: "你好，我可以帮你处理知识问答、售后咨询和流程指引。",
   toolPlan: "优先理解任务 → 检索知识 → 必要时调用工具 → 给出结论和下一步。",
   textTemplate: "请根据以下输入生成结构化内容：{{query}}",
+  memoryEnabled: true,
+  memoryWindowMessages: 10,
 };
 
 type ConsoleCall = <T>(
@@ -136,6 +138,8 @@ export function useAppLifecyclePage({
           opening: definition.ui?.opening || defaultAgentDraft.opening,
           toolPlan: definition.ui?.toolPlan || defaultAgentDraft.toolPlan,
           textTemplate: definition.ui?.textTemplate || defaultAgentDraft.textTemplate,
+          memoryEnabled: definition.memory?.enabled !== false,
+          memoryWindowMessages: Number(definition.memory?.windowMessages ?? defaultAgentDraft.memoryWindowMessages),
         });
       }
       if (app.type === "workflow") {

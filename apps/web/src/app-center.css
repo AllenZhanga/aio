@@ -802,6 +802,14 @@ button.entityRow { cursor: pointer; }
 .promptEditorHeader em { color: #8a95aa; font-size: 12px; font-style: normal; font-weight: 900; white-space: nowrap; }
 .promptEditor textarea { min-height: 150px; border-radius: 13px; background: #fff; }
 .knowledgePicker { gap: 12px; }
+.memoryConfigPanel { display: grid; gap: 10px; margin-bottom: 14px; padding: 12px; border: 1px solid #dce7f7; border-radius: 14px; background: #fbfdff; }
+.promptEditorHeader.compact { grid-template-columns: 38px minmax(0, 1fr) auto; }
+.switchControl { display: inline-grid; cursor: pointer; }
+.switchControl input { position: absolute; opacity: 0; pointer-events: none; }
+.switchControl span { position: relative; display: block; width: 42px; height: 24px; border-radius: 999px; background: #dbe4f1; box-shadow: inset 0 0 0 1px rgba(148, 163, 184, .55); transition: background .16s ease; }
+.switchControl span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 999px; background: #fff; box-shadow: 0 2px 8px rgba(15, 23, 42, .18); transition: transform .16s ease; }
+.switchControl input:checked + span { background: #2563eb; }
+.switchControl input:checked + span::after { transform: translateX(18px); }
 .knowledgeSummaryPanel { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 13px; border: 1px solid #dbe7f6; border-radius: 14px; background: #fbfdff; }
 .knowledgeSummaryPanel span, .knowledgeDrawerSummary span { display: block; color: #2563eb; font-size: 11px; font-weight: 950; letter-spacing: .06em; text-transform: uppercase; }
 .knowledgeSummaryPanel strong, .knowledgeDrawerSummary strong { display: block; margin-top: 4px; color: #172033; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }

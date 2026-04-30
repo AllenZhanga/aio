@@ -83,6 +83,8 @@ export type AgentDraft = {
   opening: string;
   toolPlan: string;
   textTemplate: string;
+  memoryEnabled: boolean;
+  memoryWindowMessages: number;
 };
 export type WorkflowNodeType =
   | "start"

@@ -48,9 +48,21 @@ public class RuntimeAppController {
     CompletableFuture.runAsync(() -> {
       try {
         emitter.send(SseEmitter.event().name("run_started").data(Map.of("app_id", appId)));
-        AiRun run = runtimeService.chat(principal, appId, request);
+        StringBuilder streamedAnswer = new StringBuilder();
+        AiRun run = runtimeService.streamChat(principal, appId, request, event -> {
+          try {
+            Object delta = event.get("delta");
+            if (delta != null) {
+              streamedAnswer.append(String.valueOf(delta));
+              Map<String, Object> payload = new LinkedHashMap<>(event);
+              payload.put("answer", streamedAnswer.toString());
+              emitter.send(SseEmitter.event().name("message").data(payload));
+            }
+          } catch (Exception exception) {
+            throw new RuntimeException(exception);
+          }
+        });
         Map<String, Object> response = chatResponse(run);
-        sendAnswerChunks(emitter, response.get("answer"));
         emitter.send(SseEmitter.event().name("run_completed").data(response));
         emitter.complete();
       } catch (Exception exception) {

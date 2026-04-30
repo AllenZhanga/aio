@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import javax.persistence.EntityNotFoundException;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -43,6 +44,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RequestCallback;
+import org.springframework.web.client.ResponseExtractor;
 import org.springframework.web.client.RestTemplate;
 
 @Service
@@ -108,6 +111,37 @@ public class RuntimeService {
     run = runRepository.save(run);
     try {
       Map<String, Object> output = invokeAgent(app, version, request, run);
+      run.setOutputJson(toJson(output));
+      run.setTotalTokens(asInt(castMap(output.get("usage")).get("total_tokens")));
+      run.setStatus("success");
+    } catch (RuntimeException exception) {
+      run.setStatus("failed");
+      run.setErrorMessage(exception.getMessage());
+      createTrace(run, "agent", "agent.error", request, Collections.emptyMap(), "failed", 0, null, exception.getMessage());
+    }
+    run.setLatencyMs(Duration.between(start, Instant.now()).toMillis());
+    return runRepository.save(run);
+  }
+
+  @Transactional
+  public AiRun streamChat(ApiKeyPrincipal principal, String appId, Map<String, Object> request, Consumer<Map<String, Object>> eventSink) {
+    Instant start = Instant.now();
+    AiApp app = loadRunnableApp(principal, appId, "agent");
+    AiAppVersion version = versionRepository.findByTenantIdAndId(principal.getTenantId(), app.getPublishedVersionId())
+        .orElseThrow(() -> new EntityNotFoundException("Published app version not found"));
+
+    AiRun run = new AiRun();
+    run.setId(Ids.prefixed("run"));
+    run.setTenantId(app.getTenantId());
+    run.setWorkspaceId(app.getWorkspaceId());
+    run.setAppId(app.getId());
+    run.setAppVersionId(version.getId());
+    run.setRunType("agent");
+    run.setInputJson(toJson(request));
+    run.setStatus("running");
+    run = runRepository.save(run);
+    try {
+      Map<String, Object> output = invokeAgent(app, version, request, run, eventSink);
       run.setOutputJson(toJson(output));
       run.setTotalTokens(asInt(castMap(output.get("usage")).get("total_tokens")));
       run.setStatus("success");
@@ -286,11 +320,20 @@ public class RuntimeService {
   }
 
   private Map<String, Object> invokeAgent(AiApp app, AiAppVersion version, Map<String, Object> request, AiRun run) {
+    return invokeAgent(app, version, request, run, null);
+  }
+
+  private Map<String, Object> invokeAgent(AiApp app, AiAppVersion version, Map<String, Object> request, AiRun run, Consumer<Map<String, Object>> eventSink) {
     Map<String, Object> definition = parseMap(version.getDefinitionJson());
     Map<String, Object> model = castMap(definition.getOrDefault("model", Collections.emptyMap()));
     Map<String, Object> prompt = castMap(definition.getOrDefault("prompt", Collections.emptyMap()));
     Map<String, Object> ui = castMap(definition.getOrDefault("ui", Collections.emptyMap()));
+    Map<String, Object> memory = castMap(definition.getOrDefault("memory", Collections.emptyMap()));
     String query = stringValue(request.get("query"));
+    String conversationId = stringValue(request.get("conversation_id"));
+    if (conversationId.isBlank()) {
+      conversationId = Ids.prefixed("conv");
+    }
     List<Map<String, Object>> retrieved = retrieveForAgent(app.getTenantId(), app.getWorkspaceId(), definition, query);
     String system = stringValue(prompt.getOrDefault("system", "你是 Aio 平台中的企业智能助手。"));
     String toolPlan = stringValue(ui.get("toolPlan"));
@@ -305,7 +348,12 @@ public class RuntimeService {
     llmInput.put("query", query);
     llmInput.put("model", model);
     llmInput.put("knowledge", retrieved);
-    LlmResult llm = callChatModel(app.getTenantId(), model, system, query);
+    llmInput.put("conversation_id", conversationId);
+    List<Map<String, String>> messages = agentMessages(app, conversationId, memory, system, query);
+    llmInput.put("messages", messages);
+    LlmResult llm = eventSink == null
+        ? callChatModel(app.getTenantId(), model, messages)
+        : callChatModelStreaming(app.getTenantId(), model, messages, eventSink);
     llmInput.put("provider_request", llm.request);
     Map<String, Object> llmOutput = new LinkedHashMap<>();
     llmOutput.put("answer", llm.answer);
@@ -314,7 +362,7 @@ public class RuntimeService {
     List<Map<String, Object>> toolOutputs = executeConfiguredTools(app.getTenantId(), definition, request, run);
     Map<String, Object> output = new LinkedHashMap<>();
     output.put("answer", llm.answer);
-    output.put("conversation_id", request.getOrDefault("conversation_id", Ids.prefixed("conv")));
+    output.put("conversation_id", conversationId);
     output.put("knowledge", retrieved);
     output.put("tool_outputs", toolOutputs);
     output.put("usage", llm.usage);
@@ -599,22 +647,26 @@ public class RuntimeService {
   }
 
   private LlmResult callChatModel(String tenantId, Map<String, Object> model, String systemPrompt, String userPrompt) {
+    List<Map<String, String>> messages = new ArrayList<>();
+    messages.add(message("system", systemPrompt));
+    messages.add(message("user", userPrompt));
+    return callChatModel(tenantId, model, messages);
+  }
+
+  private LlmResult callChatModel(String tenantId, Map<String, Object> model, List<Map<String, String>> messages) {
     Instant start = Instant.now();
     String providerId = stringValue(model.get("providerAccountId"));
     if (providerId.isBlank()) {
       Map<String, Object> usage = new LinkedHashMap<>();
-      usage.put("prompt_tokens", estimateTokens(systemPrompt) + estimateTokens(userPrompt));
+      usage.put("prompt_tokens", estimateTokens(messagesText(messages)));
       usage.put("completion_tokens", 24);
       usage.put("total_tokens", asInt(usage.get("prompt_tokens")) + 24);
       Map<String, Object> request = new LinkedHashMap<>();
       request.put("provider", "local_fallback");
-      List<Map<String, String>> fallbackMessages = new ArrayList<>();
-      fallbackMessages.add(message("system", systemPrompt));
-      fallbackMessages.add(message("user", userPrompt));
-      request.put("messages", fallbackMessages);
+      request.put("messages", messages);
       Map<String, Object> response = new LinkedHashMap<>();
       response.put("mode", "local_fallback");
-      return new LlmResult("未配置模型供应商，Aio 已完成运行链路并返回本地兜底回复：" + userPrompt, usage, Duration.between(start, Instant.now()).toMillis(), request, response);
+      return new LlmResult("未配置模型供应商，Aio 已完成运行链路并返回本地兜底回复：" + lastUserMessage(messages), usage, Duration.between(start, Instant.now()).toMillis(), request, response);
     }
     ModelProviderAccount provider = providerRepository.findByTenantIdAndId(tenantId, providerId)
         .orElseThrow(() -> new EntityNotFoundException("Provider not found"));
@@ -626,7 +678,7 @@ public class RuntimeService {
     Map<String, Object> llmConfig = parseMap(provider.getLlmConfigJson());
     String protocol = stringValue(llmConfig.get("protocol"));
     if ("dashscope".equalsIgnoreCase(provider.getProviderType()) || "dashscope_generation".equalsIgnoreCase(protocol)) {
-      return callDashScopeGeneration(provider, apiKey, chatModel, model, llmConfig, systemPrompt, userPrompt, start);
+      return callDashScopeGeneration(provider, apiKey, chatModel, model, llmConfig, messages, start);
     }
     String baseUrl = provider.effectiveLlmBaseUrl();
     String url = baseUrl.endsWith("/chat/completions")
@@ -638,9 +690,6 @@ public class RuntimeService {
     if (model.containsKey("maxTokens")) {
       body.put("max_tokens", asInt(model.get("maxTokens")));
     }
-    List<Map<String, String>> messages = new ArrayList<>();
-    messages.add(message("system", systemPrompt));
-    messages.add(message("user", userPrompt));
     body.put("messages", messages);
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.APPLICATION_JSON);
@@ -653,7 +702,7 @@ public class RuntimeService {
       JsonNode root = objectMapper.readTree(response.getBody());
       String answer = root.path("choices").path(0).path("message").path("content").asText("");
       Map<String, Object> usage = new LinkedHashMap<>();
-      usage.put("prompt_tokens", root.path("usage").path("prompt_tokens").asInt(estimateTokens(systemPrompt) + estimateTokens(userPrompt)));
+      usage.put("prompt_tokens", root.path("usage").path("prompt_tokens").asInt(estimateTokens(messagesText(messages))));
       usage.put("completion_tokens", root.path("usage").path("completion_tokens").asInt(estimateTokens(answer)));
       usage.put("total_tokens", root.path("usage").path("total_tokens").asInt(asInt(usage.get("prompt_tokens")) + asInt(usage.get("completion_tokens"))));
       Map<String, Object> responseTrace = new LinkedHashMap<>();
@@ -671,8 +720,7 @@ public class RuntimeService {
       String chatModel,
       Map<String, Object> model,
       Map<String, Object> llmConfig,
-      String systemPrompt,
-      String userPrompt,
+      List<Map<String, String>> messages,
       Instant start) {
     String baseUrl = provider.effectiveLlmBaseUrl();
     String url = baseUrl.endsWith("/generation")
@@ -687,11 +735,6 @@ public class RuntimeService {
       parameters.putIfAbsent("max_tokens", asInt(model.get("maxTokens")));
     }
     Map<String, Object> input = new LinkedHashMap<>();
-    List<Map<String, String>> messages = new ArrayList<>();
-    if (!stringValue(systemPrompt).isBlank()) {
-      messages.add(message("system", systemPrompt));
-    }
-    messages.add(message("user", userPrompt));
     input.put("messages", messages);
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("model", chatModel);
@@ -714,7 +757,7 @@ public class RuntimeService {
       String answer = dashScopeAnswer(root, responseBody);
       JsonNode usageNode = root.path("usage");
       Map<String, Object> usage = new LinkedHashMap<>();
-      usage.put("prompt_tokens", usageNode.path("input_tokens").asInt(estimateTokens(systemPrompt) + estimateTokens(userPrompt)));
+      usage.put("prompt_tokens", usageNode.path("input_tokens").asInt(estimateTokens(messagesText(messages))));
       usage.put("completion_tokens", usageNode.path("output_tokens").asInt(estimateTokens(answer)));
       usage.put("total_tokens", usageNode.path("total_tokens").asInt(asInt(usage.get("prompt_tokens")) + asInt(usage.get("completion_tokens"))));
       Map<String, Object> responseTrace = new LinkedHashMap<>();
@@ -727,6 +770,255 @@ public class RuntimeService {
     } catch (Exception e) {
       throw new IllegalArgumentException("DashScope LLM provider call failed: " + e.getMessage(), e);
     }
+  }
+
+  private LlmResult callChatModelStreaming(String tenantId, Map<String, Object> model, List<Map<String, String>> messages, Consumer<Map<String, Object>> eventSink) {
+    Instant start = Instant.now();
+    String providerId = stringValue(model.get("providerAccountId"));
+    if (providerId.isBlank()) {
+      LlmResult fallback = callChatModel(tenantId, model, messages);
+      for (String chunk : textChunks(fallback.answer)) {
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("delta", chunk);
+        eventSink.accept(event);
+      }
+      return fallback;
+    }
+    ModelProviderAccount provider = providerRepository.findByTenantIdAndId(tenantId, providerId)
+        .orElseThrow(() -> new EntityNotFoundException("Provider not found"));
+    String apiKey = cryptoService.decrypt(provider.effectiveLlmApiKeyCiphertext());
+    String chatModel = stringValue(model.getOrDefault("chatModel", provider.effectiveLlmModel()));
+    if (chatModel.isBlank()) {
+      throw new IllegalArgumentException("Chat model is required");
+    }
+    Map<String, Object> llmConfig = parseMap(provider.getLlmConfigJson());
+    String protocol = stringValue(llmConfig.get("protocol"));
+    if ("dashscope".equalsIgnoreCase(provider.getProviderType()) || "dashscope_generation".equalsIgnoreCase(protocol)) {
+      return streamDashScopeGeneration(provider, apiKey, chatModel, model, llmConfig, messages, start, eventSink);
+    }
+    return streamOpenAiChat(provider, apiKey, chatModel, model, messages, start, eventSink);
+  }
+
+  private LlmResult streamOpenAiChat(
+      ModelProviderAccount provider,
+      String apiKey,
+      String chatModel,
+      Map<String, Object> model,
+      List<Map<String, String>> messages,
+      Instant start,
+      Consumer<Map<String, Object>> eventSink) {
+    String baseUrl = provider.effectiveLlmBaseUrl();
+    String url = baseUrl.endsWith("/chat/completions")
+      ? baseUrl
+      : baseUrl.replaceAll("/+$", "") + "/chat/completions";
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("model", chatModel);
+    body.put("temperature", asDouble(model.getOrDefault("temperature", 0.3)));
+    body.put("stream", true);
+    if (model.containsKey("maxTokens")) {
+      body.put("max_tokens", asInt(model.get("maxTokens")));
+    }
+    body.put("messages", messages);
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.APPLICATION_JSON);
+    if (apiKey != null && !apiKey.isBlank()) {
+      headers.setBearerAuth(apiKey);
+    }
+    Map<String, Object> requestTrace = llmRequestTrace(provider, "openai_chat_completions_stream", url, body);
+    StringBuilder answer = new StringBuilder();
+    Map<String, Object> responseTrace = new LinkedHashMap<>();
+    try {
+      executeStreamingPost(url, body, headers, line -> {
+        String data = sseData(line);
+        if (data.isBlank() || "[DONE]".equals(data)) return;
+        try {
+          JsonNode root = objectMapper.readTree(data);
+          String delta = root.path("choices").path(0).path("delta").path("content").asText("");
+          if (delta.isBlank()) {
+            delta = root.path("choices").path(0).path("message").path("content").asText("");
+          }
+          if (!delta.isBlank()) {
+            answer.append(delta);
+            Map<String, Object> event = new LinkedHashMap<>();
+            event.put("delta", delta);
+            event.put("answer", answer.toString());
+            eventSink.accept(event);
+          }
+          responseTrace.put("last_chunk", root);
+        } catch (Exception ignored) {
+        }
+      });
+      Map<String, Object> usage = estimatedUsage(messages, answer.toString());
+      responseTrace.put("answer", answer.toString());
+      return new LlmResult(answer.toString(), usage, Duration.between(start, Instant.now()).toMillis(), requestTrace, responseTrace);
+    } catch (Exception e) {
+      throw new IllegalArgumentException("LLM provider streaming call failed: " + e.getMessage(), e);
+    }
+  }
+
+  private LlmResult streamDashScopeGeneration(
+      ModelProviderAccount provider,
+      String apiKey,
+      String chatModel,
+      Map<String, Object> model,
+      Map<String, Object> llmConfig,
+      List<Map<String, String>> messages,
+      Instant start,
+      Consumer<Map<String, Object>> eventSink) {
+    String baseUrl = provider.effectiveLlmBaseUrl();
+    String url = baseUrl.endsWith("/generation")
+      ? baseUrl
+      : baseUrl.replaceAll("/+$", "") + "/api/v1/services/aigc/text-generation/generation";
+    Map<String, Object> parameters = castMap(llmConfig.get("parameters"));
+    parameters.putIfAbsent("enable_thinking", true);
+    parameters.put("incremental_output", true);
+    parameters.putIfAbsent("result_format", "message");
+    parameters.putIfAbsent("temperature", asDouble(model.getOrDefault("temperature", 0.3)));
+    if (model.containsKey("maxTokens")) {
+      parameters.putIfAbsent("max_tokens", asInt(model.get("maxTokens")));
+    }
+    Map<String, Object> input = new LinkedHashMap<>();
+    input.put("messages", messages);
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("model", chatModel);
+    body.put("input", input);
+    body.put("parameters", parameters);
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.APPLICATION_JSON);
+    headers.set("X-DashScope-SSE", "enable");
+    if (apiKey != null && !apiKey.isBlank()) {
+      headers.setBearerAuth(apiKey);
+    }
+    Map<String, Object> requestTrace = llmRequestTrace(provider, "dashscope_generation_stream", url, body);
+    requestTrace.put("sse", true);
+    StringBuilder answer = new StringBuilder();
+    Map<String, Object> responseTrace = new LinkedHashMap<>();
+    try {
+      executeStreamingPost(url, body, headers, line -> {
+        String data = sseData(line);
+        if (data.isBlank() || "[DONE]".equals(data)) return;
+        try {
+          JsonNode root = objectMapper.readTree(data);
+          String delta = dashScopeAnswer(root, "");
+          if (!delta.isBlank()) {
+            answer.append(delta);
+            Map<String, Object> event = new LinkedHashMap<>();
+            event.put("delta", delta);
+            event.put("answer", answer.toString());
+            eventSink.accept(event);
+          }
+          responseTrace.put("last_chunk", root);
+        } catch (Exception ignored) {
+        }
+      });
+      Map<String, Object> usage = estimatedUsage(messages, answer.toString());
+      responseTrace.put("answer", answer.toString());
+      return new LlmResult(answer.toString(), usage, Duration.between(start, Instant.now()).toMillis(), requestTrace, responseTrace);
+    } catch (Exception e) {
+      throw new IllegalArgumentException("DashScope LLM provider streaming call failed: " + e.getMessage(), e);
+    }
+  }
+
+  private void executeStreamingPost(String url, Map<String, Object> body, HttpHeaders headers, Consumer<String> lineConsumer) {
+    RequestCallback requestCallback = request -> {
+      request.getHeaders().putAll(headers);
+      objectMapper.writeValue(request.getBody(), body);
+    };
+    ResponseExtractor<Void> responseExtractor = response -> {
+      try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(response.getBody(), java.nio.charset.StandardCharsets.UTF_8))) {
+        String line;
+        while ((line = reader.readLine()) != null) {
+          lineConsumer.accept(line);
+        }
+      }
+      return null;
+    };
+    restTemplate.execute(url, org.springframework.http.HttpMethod.POST, requestCallback, responseExtractor);
+  }
+
+  private List<Map<String, String>> agentMessages(AiApp app, String conversationId, Map<String, Object> memory, String system, String query) {
+    List<Map<String, String>> messages = new ArrayList<>();
+    messages.add(message("system", system));
+    if (!Boolean.FALSE.equals(memory.getOrDefault("enabled", true)) && !conversationId.isBlank()) {
+      int windowMessages = Math.max(0, asInt(memory.getOrDefault("windowMessages", 10)));
+      List<Map<String, String>> history = conversationHistory(app, conversationId, windowMessages);
+      messages.addAll(history);
+    }
+    messages.add(message("user", query));
+    return messages;
+  }
+
+  private List<Map<String, String>> conversationHistory(AiApp app, String conversationId, int windowMessages) {
+    if (windowMessages <= 0) return Collections.emptyList();
+    List<AiRun> runs = runRepository.findByTenantIdAndWorkspaceIdAndAppIdOrderByCreatedAtDesc(app.getTenantId(), app.getWorkspaceId(), app.getId());
+    List<Map<String, String>> history = new ArrayList<>();
+    for (AiRun run : runs) {
+      if (!"agent".equals(run.getRunType()) || !"success".equals(run.getStatus())) {
+        continue;
+      }
+      Map<String, Object> input = parseMap(run.getInputJson());
+      Map<String, Object> output = parseMap(run.getOutputJson());
+      if (!conversationId.equals(stringValue(output.get("conversation_id")))) {
+        continue;
+      }
+      String query = stringValue(input.get("query"));
+      String answer = stringValue(output.get("answer"));
+      if (!query.isBlank()) history.add(0, message("user", query));
+      if (!answer.isBlank()) history.add(query.isBlank() ? 0 : 1, message("assistant", answer));
+      while (history.size() > windowMessages) {
+        history.remove(0);
+      }
+    }
+    return history;
+  }
+
+  private String sseData(String line) {
+    String trimmed = line == null ? "" : line.trim();
+    if (!trimmed.startsWith("data:")) return "";
+    return trimmed.substring(5).trim();
+  }
+
+  private List<String> textChunks(String answer) {
+    List<String> chunks = new ArrayList<>();
+    String text = answer == null ? "" : answer;
+    if (text.isBlank()) {
+      return List.of("");
+    }
+    int start = 0;
+    while (start < text.length()) {
+      int end = Math.min(start + 48, text.length());
+      chunks.add(text.substring(start, end));
+      start = end;
+    }
+    return chunks;
+  }
+
+  private Map<String, Object> estimatedUsage(List<Map<String, String>> messages, String answer) {
+    Map<String, Object> usage = new LinkedHashMap<>();
+    int promptTokens = estimateTokens(messagesText(messages));
+    int completionTokens = estimateTokens(answer);
+    usage.put("prompt_tokens", promptTokens);
+    usage.put("completion_tokens", completionTokens);
+    usage.put("total_tokens", promptTokens + completionTokens);
+    return usage;
+  }
+
+  private String messagesText(List<Map<String, String>> messages) {
+    StringBuilder builder = new StringBuilder();
+    for (Map<String, String> item : messages) {
+      builder.append(item.getOrDefault("role", "")).append(": ").append(item.getOrDefault("content", "")).append("\n");
+    }
+    return builder.toString();
+  }
+
+  private String lastUserMessage(List<Map<String, String>> messages) {
+    for (int index = messages.size() - 1; index >= 0; index--) {
+      Map<String, String> item = messages.get(index);
+      if ("user".equals(item.get("role"))) {
+        return item.getOrDefault("content", "");
+      }
+    }
+    return "";
   }
 
   private JsonNode parseDashScopeResponse(String responseBody) throws JsonProcessingException {

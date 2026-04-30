@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bot, Check, Code2, Database, KeyRound, PlayCircle, ShieldCheck, SlidersHorizontal, Workflow } from "lucide-react";
+import { Bot, BrainCircuit, Check, Code2, Database, KeyRound, PlayCircle, ShieldCheck, SlidersHorizontal, Workflow } from "lucide-react";
 import { buildAgentDefinition } from "../appDefinitions";
 import type { AgentDraft, DatasetRecord, ModelOption } from "../types";
 import { Drawer, Field, Notice, PromptEditor } from "./ui";
@@ -159,7 +159,35 @@ export function AgentDesigner({
         className="agentParameterDrawer"
         footer={<button className="primaryBtn" onClick={() => setAdvancedOpen(false)}><Check size={16} /> 完成</button>}
       >
-        <Notice>规划策略会和角色规则一起组成运行时提示词；Temperature 会传给模型供应商。</Notice>
+        <Notice>规划策略、会话记忆和角色规则会一起组成运行时提示词；Temperature 会传给模型供应商。</Notice>
+        <section className="memoryConfigPanel">
+          <div className="promptEditorHeader compact">
+            <span className="promptEditorIcon"><BrainCircuit size={18} /></span>
+            <div>
+              <small>Memory</small>
+              <strong>会话记录与记忆</strong>
+              <p>开启后，同一 conversation_id 下最近的用户问题和 AI 回复会注入下一轮对话。</p>
+            </div>
+            <label className="switchControl">
+              <input
+                type="checkbox"
+                checked={draft.memoryEnabled}
+                onChange={(event) => setDraft({ ...draft, memoryEnabled: event.target.checked })}
+              />
+              <span />
+            </label>
+          </div>
+          <Field label="记忆窗口" hint="按消息条数计算，包含用户消息和 AI 回复。值越大上下文越完整，也越消耗 token。">
+            <input
+              type="number"
+              min="0"
+              max="40"
+              disabled={!draft.memoryEnabled}
+              value={draft.memoryWindowMessages}
+              onChange={(event) => setDraft({ ...draft, memoryWindowMessages: Number(event.target.value) })}
+            />
+          </Field>
+        </section>
         <PromptEditor
           title="任务规划策略"
           label="Planning"

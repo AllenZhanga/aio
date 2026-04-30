@@ -36,9 +36,11 @@ export function useExperiencePage({
   const [input, setInput] = useState("请帮我处理一个退款咨询");
   const [feedback, setFeedback] = useState("确认继续");
   const [busyAction, setBusyAction] = useState("");
+  const [conversationId, setConversationId] = useState("");
 
   function resetMessages() {
     setMessages([]);
+    setConversationId("");
   }
 
   async function sendMessage() {
@@ -155,6 +157,10 @@ export function useExperiencePage({
       type === "agent"
         ? runtimeResponseText(response) || runtimeOutputText(response.outputs, response.status)
         : runtimeOutputText(response.outputs, response.status);
+    const details = runtimeResponseDetails(response);
+    if (details.conversationId) {
+      setConversationId(details.conversationId);
+    }
     setMessages((current) => [
       ...current,
       {
@@ -162,7 +168,7 @@ export function useExperiencePage({
         role: "assistant",
         text,
         meta: `run ${response.run_id} · ${response.status}`,
-        ...runtimeResponseDetails(response),
+        ...details,
       },
     ]);
   }
@@ -183,7 +189,7 @@ export function useExperiencePage({
       },
       body: JSON.stringify(
         type === "agent"
-          ? { query: prompt, stream: true }
+          ? { query: prompt, stream: true, ...(conversationId ? { conversation_id: conversationId } : {}) }
           : {
               inputs: {
                 question: prompt,
@@ -240,6 +246,9 @@ export function useExperiencePage({
             ? runtimeResponseText(payload) || streamedText
             : runtimeOutputText(payload.outputs, payload.status) || streamedText;
         const responseDetails = runtimeResponseDetails(data as RuntimeResponse);
+        if (responseDetails.conversationId) {
+          setConversationId(responseDetails.conversationId);
+        }
         updateMessage(assistantId, {
           text: answer || "已完成。",
           meta: `run ${stringValue(data.run_id)} · ${stringValue(data.status)}`,
