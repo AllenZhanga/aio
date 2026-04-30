@@ -85,6 +85,8 @@ export type AgentDraft = {
   textTemplate: string;
   memoryEnabled: boolean;
   memoryWindowMessages: number;
+  memorySummaryEnabled: boolean;
+  memorySummaryTriggerMessages: number;
 };
 export type WorkflowNodeType =
   | "start"

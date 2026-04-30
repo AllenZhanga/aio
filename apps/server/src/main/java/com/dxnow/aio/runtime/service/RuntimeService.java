@@ -349,7 +349,9 @@ public class RuntimeService {
     llmInput.put("model", model);
     llmInput.put("knowledge", retrieved);
     llmInput.put("conversation_id", conversationId);
-    List<Map<String, String>> messages = agentMessages(app, conversationId, memory, system, query);
+    Map<String, Object> memoryState = conversationMemory(app, conversationId);
+    llmInput.put("memory", memoryState);
+    List<Map<String, String>> messages = agentMessages(app, conversationId, memory, memoryState, system, query);
     llmInput.put("messages", messages);
     LlmResult llm = eventSink == null
         ? callChatModel(app.getTenantId(), model, messages)
@@ -366,6 +368,7 @@ public class RuntimeService {
     output.put("knowledge", retrieved);
     output.put("tool_outputs", toolOutputs);
     output.put("usage", llm.usage);
+    output.put("memory_summary", nextMemorySummary(app, conversationId, memory, memoryState, query, llm.answer));
     return output;
   }
 
@@ -463,6 +466,7 @@ public class RuntimeService {
       createTrace(run, "workflow_node", current, traceInput == null ? config : traceInput, traceOutput == null ? output : traceOutput, "success", Duration.between(started, Instant.now()).toMillis(), traceToken, null);
       if ("end".equals(type)) {
         run.setStatus("success");
+        putConversationId(output, context);
         run.setOutputJson(toJson(output));
         return;
       }
@@ -472,7 +476,15 @@ public class RuntimeService {
       }
     }
     run.setStatus("success");
+    putConversationId(context, context);
     run.setOutputJson(toJson(context));
+  }
+
+  private void putConversationId(Map<String, Object> output, Map<String, Object> context) {
+    String conversationId = stringValue(castMap(context.get("conversation")).get("id"));
+    if (!conversationId.isBlank()) {
+      output.put("conversation_id", conversationId);
+    }
   }
 
   private Map<String, Object> executeWorkflowNodeWithRetry(AiRun run, String type, Map<String, Object> config, Map<String, Object> context, Map<String, Object> runtime) {
@@ -936,16 +948,67 @@ public class RuntimeService {
     restTemplate.execute(url, org.springframework.http.HttpMethod.POST, requestCallback, responseExtractor);
   }
 
-  private List<Map<String, String>> agentMessages(AiApp app, String conversationId, Map<String, Object> memory, String system, String query) {
+  private List<Map<String, String>> agentMessages(AiApp app, String conversationId, Map<String, Object> memory, Map<String, Object> memoryState, String system, String query) {
     List<Map<String, String>> messages = new ArrayList<>();
     messages.add(message("system", system));
     if (!Boolean.FALSE.equals(memory.getOrDefault("enabled", true)) && !conversationId.isBlank()) {
+      String summary = stringValue(memoryState.get("summary"));
+      if (!summary.isBlank()) {
+        messages.add(message("system", "以下是本会话较早历史的压缩摘要，请用于保持长期上下文，不要逐字复述：\n" + summary));
+      }
       int windowMessages = Math.max(0, asInt(memory.getOrDefault("windowMessages", 10)));
       List<Map<String, String>> history = conversationHistory(app, conversationId, windowMessages);
       messages.addAll(history);
     }
     messages.add(message("user", query));
     return messages;
+  }
+
+  private Map<String, Object> conversationMemory(AiApp app, String conversationId) {
+    Map<String, Object> memory = new LinkedHashMap<>();
+    if (conversationId.isBlank()) return memory;
+    for (AiRun run : runRepository.findByTenantIdAndWorkspaceIdAndAppIdOrderByCreatedAtDesc(app.getTenantId(), app.getWorkspaceId(), app.getId())) {
+      if (!"agent".equals(run.getRunType()) || !"success".equals(run.getStatus())) continue;
+      Map<String, Object> output = parseMap(run.getOutputJson());
+      if (!conversationId.equals(stringValue(output.get("conversation_id")))) continue;
+      String summary = stringValue(output.get("memory_summary"));
+      if (!summary.isBlank()) {
+        memory.put("summary", summary);
+        memory.put("source_run_id", run.getId());
+        return memory;
+      }
+    }
+    return memory;
+  }
+
+  private String nextMemorySummary(AiApp app, String conversationId, Map<String, Object> memory, Map<String, Object> memoryState, String query, String answer) {
+    if (Boolean.FALSE.equals(memory.getOrDefault("enabled", true))) return "";
+    Map<String, Object> summaryConfig = castMap(memory.getOrDefault("summary", Collections.emptyMap()));
+    if (Boolean.FALSE.equals(summaryConfig.getOrDefault("enabled", true))) {
+      return stringValue(memoryState.get("summary"));
+    }
+    int triggerMessages = Math.max(4, asInt(summaryConfig.getOrDefault("triggerMessages", 12)));
+    int maxChars = Math.max(400, asInt(summaryConfig.getOrDefault("maxChars", 1800)));
+    List<Map<String, String>> fullHistory = conversationHistory(app, conversationId, triggerMessages + 4);
+    fullHistory.add(message("user", query));
+    fullHistory.add(message("assistant", answer));
+    if (fullHistory.size() < triggerMessages && stringValue(memoryState.get("summary")).isBlank()) {
+      return "";
+    }
+    StringBuilder builder = new StringBuilder();
+    String previousSummary = stringValue(memoryState.get("summary"));
+    if (!previousSummary.isBlank()) {
+      builder.append(previousSummary).append("\n");
+    }
+    builder.append("最近压缩：\n");
+    for (Map<String, String> item : fullHistory) {
+      String role = "assistant".equals(item.get("role")) ? "AI" : "用户";
+      String content = item.getOrDefault("content", "").replaceAll("\\s+", " ").trim();
+      if (!content.isBlank()) {
+        builder.append("- ").append(role).append("：").append(content).append("\n");
+      }
+    }
+    return trimFromStart(builder.toString(), maxChars);
   }
 
   private List<Map<String, String>> conversationHistory(AiApp app, String conversationId, int windowMessages) {
@@ -1019,6 +1082,11 @@ public class RuntimeService {
       }
     }
     return "";
+  }
+
+  private String trimFromStart(String text, int maxChars) {
+    if (text == null || text.length() <= maxChars) return text == null ? "" : text;
+    return "...\n" + text.substring(Math.max(0, text.length() - maxChars));
   }
 
   private JsonNode parseDashScopeResponse(String responseBody) throws JsonProcessingException {
@@ -1140,6 +1208,7 @@ public class RuntimeService {
     Map<String, Object> context = new LinkedHashMap<>();
     context.put("inputs", request == null ? Collections.emptyMap() : request.getOrDefault("inputs", Collections.emptyMap()));
     context.put("metadata", request == null ? Collections.emptyMap() : request.getOrDefault("metadata", Collections.emptyMap()));
+    context.put("conversation", workflowConversationContext(request, run));
     context.put("vars", new LinkedHashMap<>());
     context.put("nodes", new LinkedHashMap<>());
     Map<String, Object> sys = new LinkedHashMap<>();
@@ -1149,6 +1218,84 @@ public class RuntimeService {
     sys.put("workspaceId", run.getWorkspaceId());
     context.put("sys", sys);
     return context;
+  }
+
+  private Map<String, Object> workflowConversationContext(Map<String, Object> request, AiRun run) {
+    Map<String, Object> context = new LinkedHashMap<>();
+    if (request == null) {
+      context.put("id", "");
+      context.put("messages", Collections.emptyList());
+      context.put("summary", "");
+      return context;
+    }
+    String conversationId = stringValue(request.get("conversation_id"));
+    if (conversationId.isBlank()) {
+      conversationId = stringValue(castMap(request.get("metadata")).get("conversation_id"));
+    }
+    context.put("id", conversationId);
+    List<Map<String, String>> messages = conversationId.isBlank()
+        ? Collections.emptyList()
+        : workflowConversationMessages(run, conversationId, 12);
+    context.put("messages", messages);
+    context.put("summary", workflowConversationSummary(run, conversationId));
+    context.put("lastUserMessage", lastRoleContent(messages, "user"));
+    context.put("lastAssistantMessage", lastRoleContent(messages, "assistant"));
+    return context;
+  }
+
+  private List<Map<String, String>> workflowConversationMessages(AiRun currentRun, String conversationId, int windowMessages) {
+    List<AiRun> runs = runRepository.findByTenantIdAndWorkspaceIdAndAppIdOrderByCreatedAtDesc(currentRun.getTenantId(), currentRun.getWorkspaceId(), currentRun.getAppId());
+    List<Map<String, String>> messages = new ArrayList<>();
+    for (AiRun run : runs) {
+      if (!"workflow".equals(run.getRunType()) || !"success".equals(run.getStatus())) continue;
+      Map<String, Object> input = parseMap(run.getInputJson());
+      Map<String, Object> output = parseMap(run.getOutputJson());
+      if (!conversationId.equals(workflowConversationId(input))) continue;
+      String question = stringValue(castMap(input.get("inputs")).get("question"));
+      String answer = workflowStreamText(output);
+      if (!question.isBlank()) messages.add(0, message("user", question));
+      if (!answer.isBlank()) messages.add(question.isBlank() ? 0 : 1, message("assistant", answer));
+      while (messages.size() > windowMessages) {
+        messages.remove(0);
+      }
+    }
+    return messages;
+  }
+
+  private String workflowConversationSummary(AiRun currentRun, String conversationId) {
+    if (conversationId.isBlank()) return "";
+    StringBuilder builder = new StringBuilder();
+    for (Map<String, String> message : workflowConversationMessages(currentRun, conversationId, 20)) {
+      String role = "assistant".equals(message.get("role")) ? "AI" : "用户";
+      builder.append("- ").append(role).append("：").append(message.getOrDefault("content", "")).append("\n");
+    }
+    return trimFromStart(builder.toString(), 1800);
+  }
+
+  private String workflowStreamText(Map<String, Object> outputs) {
+    for (String key : List.of("answer", "text", "output", "result", "outputs")) {
+      Object value = outputs.get(key);
+      if (value != null) {
+        return String.valueOf(value);
+      }
+    }
+    return outputs.isEmpty() ? "" : outputs.toString();
+  }
+
+  private String workflowConversationId(Map<String, Object> inputJson) {
+    String conversationId = stringValue(inputJson.get("conversation_id"));
+    if (!conversationId.isBlank()) return conversationId;
+    return stringValue(castMap(inputJson.get("metadata")).get("conversation_id"));
+  }
+
+  private String lastRoleContent(List<Map<String, String>> messages, String role) {
+    for (int index = messages.size() - 1; index >= 0; index--) {
+      Map<String, String> message = messages.get(index);
+      if (role.equals(message.get("role"))) {
+        return message.getOrDefault("content", "");
+      }
+    }
+    return "";
   }
 
   @SuppressWarnings("unchecked")
@@ -1174,6 +1321,7 @@ public class RuntimeService {
     state.put("context", context);
     state.put("pending_node_id", pendingNodeId);
     wrapper.put("__workflow_state", state);
+    putConversationId(wrapper, context);
     return wrapper;
   }
 

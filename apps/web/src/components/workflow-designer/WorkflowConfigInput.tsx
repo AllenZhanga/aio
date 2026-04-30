@@ -9,6 +9,7 @@ const groupLabels: Record<WorkflowVariableGroup, string> = {
   input: "输入变量",
   sys: "系统变量",
   inputs: "流程输入",
+  conversation: "会话记录",
   vars: "流程变量",
   nodes: "上游节点",
   metadata: "调用元数据",
@@ -235,6 +236,6 @@ function groupVariables(variables: WorkflowVariableOption[]) {
       groups[variable.group].push(variable);
       return groups;
     },
-    { input: [], sys: [], inputs: [], vars: [], nodes: [], metadata: [] },
+    { input: [], sys: [], inputs: [], conversation: [], vars: [], nodes: [], metadata: [] },
   );
 }

@@ -17,7 +17,15 @@ export function buildAgentDefinition(draft: AgentDraft) {
       scoreThreshold: draft.knowledgeScoreThreshold,
     })),
     tools: [],
-    memory: { enabled: draft.memoryEnabled, windowMessages: draft.memoryWindowMessages },
+    memory: {
+      enabled: draft.memoryEnabled,
+      windowMessages: draft.memoryWindowMessages,
+      summary: {
+        enabled: draft.memorySummaryEnabled,
+        triggerMessages: draft.memorySummaryTriggerMessages,
+        maxChars: 1800,
+      },
+    },
     output: { format: "text" },
     ui: { opening: draft.opening, toolPlan: draft.toolPlan },
   };
@@ -33,6 +41,7 @@ export function buildWorkflowDefinition(
     inputs: [
       { name: "question", type: "string", required: true },
       { name: "operator_id", type: "string", required: false },
+      { name: "conversation_id", type: "string", required: false },
     ],
     variables: [],
     nodes: nodes.map((node) => ({

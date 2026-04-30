@@ -108,7 +108,6 @@ export function OrgOpsPage(props: {
         <div className="orgHeroCards">
           <article><small>账号角色</small><strong>{roleLabel}</strong><p>{props.session.displayName || props.session.userId}</p></article>
           <article><small>可见空间</small><strong>{props.workspaces.length}</strong><p>{roleLabel === "管理员" ? "管理员可查看全部授权空间" : "成员仅查看授权空间"}</p></article>
-          <article><small>活跃 Key</small><strong>{activeKeys}</strong><p>外部系统调用 Runtime API 的凭据</p></article>
         </div>
       </div>
       <div className="orgKpiGrid">
@@ -116,7 +115,6 @@ export function OrgOpsPage(props: {
         <article><span>知识资产</span><strong>{usage?.datasets ?? 0}</strong><p>文档 {usage?.documents ?? 0}</p></article>
         <article><span>用户</span><strong>{props.users.length}</strong><p>可登录控制台账号</p></article>
         <article><span>运行次数</span><strong>{usage?.runs ?? 0}</strong><p>失败 {usage?.failedRuns ?? 0} · 等待 {usage?.waitingRuns ?? 0}</p></article>
-        <article><span>等待任务</span><strong>{usage?.pendingWaitTasks ?? 0}</strong><p>待处理 / 总计 {usage?.waitTasks ?? 0}</p></article>
         <article><span>Token</span><strong>{usage?.totalTokens ?? 0}</strong><p>累计消耗</p></article>
         <article><span>平均耗时</span><strong>{usage?.averageLatencyMs ?? 0}ms</strong><p>端到端运行</p></article>
       </div>
@@ -187,25 +185,7 @@ export function OrgOpsPage(props: {
             {!props.users.length && <StatePanel title="暂无用户" text="新增用户后，可使用邮箱和密码登录并进入授权空间。" />}
           </EntityList>
         </section>
-        <section className="designCard">
-          <div className="sectionTitle">
-            <Code2 size={18} />
-            <div><h2>API Key 与集成范围</h2><p>外部系统通过这些 Key 调用 Runtime API；明文只在创建时返回。</p></div>
-          </div>
-          <EntityList>
-            {props.apiKeys.map((key) => (
-              <EntityRow
-                key={key.id}
-                title={key.name}
-                subtitle={`${key.keyPrefix}*** · ${key.appId ? "应用级" : "空间级"}`}
-                status={key.status}
-                statusTone={key.status === "active" ? "success" : "cancelled"}
-                meta={key.appId || key.workspaceId || props.session.workspaceId}
-              />
-            ))}
-            {!props.apiKeys.length && <StatePanel title="暂无 API Key" text="在 API Key 菜单创建 Key 后，会在这里看到 scope 和状态。" />}
-          </EntityList>
-        </section>
+        
         <section className="designCard orgAuditCard">
           <div className="sectionTitle">
             <ClipboardCheck size={18} />

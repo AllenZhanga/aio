@@ -1,7 +1,7 @@
 import type { WorkflowEdge, WorkflowNode } from "../../types";
 import { nodeSpec } from "./nodeSpecs";
 
-export type WorkflowVariableGroup = "input" | "sys" | "inputs" | "vars" | "nodes" | "metadata";
+export type WorkflowVariableGroup = "input" | "sys" | "inputs" | "conversation" | "vars" | "nodes" | "metadata";
 
 export type WorkflowVariableOption = {
   group: WorkflowVariableGroup;
@@ -22,6 +22,14 @@ const systemVariables: WorkflowVariableOption[] = [
 const defaultInputVariables: WorkflowVariableOption[] = [
   { group: "inputs", label: "用户问题", path: "inputs.question", type: "string", description: "调用 Workflow 时传入的问题" },
   { group: "inputs", label: "操作人", path: "inputs.operator_id", type: "string", description: "调用端传入的操作人标识" },
+];
+
+const conversationVariables: WorkflowVariableOption[] = [
+  { group: "conversation", label: "会话 ID", path: "conversation.id", type: "string", description: "调用端传入的 conversation_id" },
+  { group: "conversation", label: "会话摘要", path: "conversation.summary", type: "string", description: "当前会话历史的压缩摘要" },
+  { group: "conversation", label: "最近消息", path: "conversation.messages", type: "array", description: "当前会话最近的用户与 AI 消息" },
+  { group: "conversation", label: "上一条用户消息", path: "conversation.lastUserMessage", type: "string", description: "当前会话中最近的用户消息" },
+  { group: "conversation", label: "上一条 AI 回复", path: "conversation.lastAssistantMessage", type: "string", description: "当前会话中最近的 AI 回复" },
 ];
 
 const metadataVariables: WorkflowVariableOption[] = [
@@ -50,6 +58,7 @@ export function availableVariablesForNode({
     ...(includeCurrentInputs && currentNode ? nodeInputVariables(currentNode) : []),
     ...systemVariables,
     ...inputVariablesFromStart(nodes),
+    ...conversationVariables,
     ...flowVariablesFromGraph(nodes, ancestorIds),
     ...upstreamNodeVariables,
     ...metadataVariables,

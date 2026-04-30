@@ -79,11 +79,6 @@ export function AppCenter(props: {
       {props.loading && <StatePanel icon="loading" title="正在同步应用列表" text="正在读取当前空间的应用、发布状态和最近更新时间。" />}
       {!props.loading && !props.error && (
         <div className="appGrid">
-          <button className="createCard" onClick={() => props.openCreateModal("agent", "agent")}>
-            <Plus size={22} />
-            <strong>创建应用</strong>
-            <span>空白 Agent / Workflow</span>
-          </button>
           {props.visibleApps.map((app) => (
             <AppTile
               key={app.id}
@@ -126,15 +121,15 @@ function AppTile({
         if (event.key === "Enter") openDesigner(app);
       }}
     >
-      <div className="tileTop">
+      <div className="tileHeader">
         <span className={`tileIcon ${app.type}`}>
           {app.type === "agent" ? <Bot size={20} /> : <Workflow size={20} />}
         </span>
+        <strong className="tileTitle">{app.name}</strong>
         <span className={`publishState ${statusMeta.tone}`}>
           <i /> {statusMeta.label}
         </span>
       </div>
-      <strong>{app.name}</strong>
       <dl>
         <dt>应用 ID</dt>
         <dd>{app.id}</dd>

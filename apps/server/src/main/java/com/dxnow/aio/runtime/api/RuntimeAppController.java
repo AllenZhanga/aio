@@ -171,12 +171,19 @@ public class RuntimeAppController {
     Map<String, Object> response = new LinkedHashMap<>();
     response.put("run_id", run.getId());
     response.put("status", run.getStatus());
+    response.put("conversation_id", workflowConversationId(run));
     if ("waiting".equals(run.getStatus()) && run.getCurrentWaitTaskId() != null) {
       response.put("wait_task", runtimeService.waitTaskView(runtimeService.getWaitTask(principal, run.getCurrentWaitTaskId())));
     } else {
       response.put("outputs", runtimeService.outputMap(run));
     }
     return response;
+  }
+
+  private String workflowConversationId(AiRun run) {
+    Object value = runtimeService.outputMap(run).get("conversation_id");
+    if (value != null) return String.valueOf(value);
+    return null;
   }
 
   private String workflowStreamText(Map<String, Object> outputs) {

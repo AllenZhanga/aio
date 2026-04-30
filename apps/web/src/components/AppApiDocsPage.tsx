@@ -114,6 +114,7 @@ function buildApiDocs(app: AppRecord, runtimeKey: string) {
       : JSON.stringify(
           {
             query: "帮我总结一下退款政策",
+            conversation_id: "conv_customer_001",
             inputs: { user_name: "张三" },
             stream: false,
           },
@@ -195,6 +196,15 @@ function buildApiDocs(app: AppRecord, runtimeKey: string) {
             {
               title: "流式调用提示",
               code: "将请求体 stream 设置为 true；接口会以 text/event-stream 返回 run_started、message、run_completed 或 error 事件。",
+            },
+            {
+              title: "多轮会话与记忆",
+              code: [
+                "外部系统需要在同一会话内持续传入相同 conversation_id。",
+                "Agent 发布定义中的 memory.windowMessages 控制最近消息窗口。",
+                "memory.summary.enabled 开启后，长会话会把更早历史压缩为 memory_summary，并在后续请求中自动注入。",
+                "推荐：业务侧保存 conversation_id；Aio 侧保存 run、摘要和最近窗口。"
+              ].join("\n"),
             },
           ],
   };

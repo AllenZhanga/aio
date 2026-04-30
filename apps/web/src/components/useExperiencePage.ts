@@ -194,7 +194,9 @@ export function useExperiencePage({
               inputs: {
                 question: prompt,
                 operator_id: authSession?.userId || "console-user",
+                ...(conversationId ? { conversation_id: conversationId } : {}),
               },
+              ...(conversationId ? { conversation_id: conversationId } : {}),
               response_mode: "streaming",
             },
       ),

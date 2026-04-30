@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bot, BrainCircuit, Check, Code2, Database, KeyRound, PlayCircle, ShieldCheck, SlidersHorizontal, Workflow } from "lucide-react";
+import { Bot, BrainCircuit, Check, Code2, Database, KeyRound, PlayCircle, ShieldCheck, SlidersHorizontal, Workflow, X } from "lucide-react";
 import { buildAgentDefinition } from "../appDefinitions";
 import type { AgentDraft, DatasetRecord, ModelOption } from "../types";
 import { Drawer, Field, Notice, PromptEditor } from "./ui";
@@ -37,12 +37,13 @@ export function AgentDesigner({
   const selectedDatasets = datasets.filter((dataset) =>
     draft.knowledgeDatasetIds.includes(dataset.id),
   );
+  const loadedDatasetIds = new Set(datasets.map((dataset) => dataset.id));
+  const missingDatasetIds = draft.knowledgeDatasetIds.filter((datasetId) => !loadedDatasetIds.has(datasetId));
   const selectedDatasetNames = selectedDatasets.map((dataset) => dataset.name);
-  const missingDatasetCount = draft.knowledgeDatasetIds.length - selectedDatasets.length;
   const knowledgeSummary = draft.knowledgeDatasetIds.length
     ? [
         ...selectedDatasetNames,
-        ...(missingDatasetCount > 0 ? [`${missingDatasetCount} 个已选数据集未加载`] : []),
+        ...(missingDatasetIds.length > 0 ? [`${missingDatasetIds.length} 个已选数据集未加载`] : []),
       ].join("、")
     : "未选择知识库";
   function selectProvider(providerId: string) {
@@ -59,6 +60,13 @@ export function AgentDesigner({
       knowledgeDatasetIds: selected
         ? draft.knowledgeDatasetIds.filter((id) => id !== datasetId)
         : [...draft.knowledgeDatasetIds, datasetId],
+    });
+  }
+
+  function removeDataset(datasetId: string) {
+    setDraft({
+      ...draft,
+      knowledgeDatasetIds: draft.knowledgeDatasetIds.filter((id) => id !== datasetId),
     });
   }
 
@@ -109,7 +117,6 @@ export function AgentDesigner({
           </div>
           <button className="ghostBtn agentSettingsBtn" onClick={() => setAdvancedOpen(true)} title="高级行为" aria-label="高级行为">
             <SlidersHorizontal size={18} />
-            高级行为
           </button>
         </div>
         <section className="promptEditor knowledgePicker">
@@ -120,7 +127,7 @@ export function AgentDesigner({
               <strong>知识库</strong>
               <p>选择后会在运行时检索知识片段，并注入到 Agent 系统提示词中。</p>
             </div>
-            <em>{draft.knowledgeDatasetIds.length} 个</em>
+            <em>{selectedDatasets.length} 个可用{missingDatasetIds.length ? ` · ${missingDatasetIds.length} 个未加载` : ""}</em>
           </div>
           <div className="knowledgeSummaryPanel">
             <div>
@@ -187,6 +194,28 @@ export function AgentDesigner({
               onChange={(event) => setDraft({ ...draft, memoryWindowMessages: Number(event.target.value) })}
             />
           </Field>
+          <div className="formGrid two compactGrid">
+            <Field label="长对话摘要" hint="开启后，超过阈值的历史会压缩为滚动摘要，下一轮继续注入。">
+              <select
+                disabled={!draft.memoryEnabled}
+                value={draft.memorySummaryEnabled ? "enabled" : "disabled"}
+                onChange={(event) => setDraft({ ...draft, memorySummaryEnabled: event.target.value === "enabled" })}
+              >
+                <option value="enabled">开启</option>
+                <option value="disabled">关闭</option>
+              </select>
+            </Field>
+            <Field label="摘要触发条数">
+              <input
+                type="number"
+                min="4"
+                max="80"
+                disabled={!draft.memoryEnabled || !draft.memorySummaryEnabled}
+                value={draft.memorySummaryTriggerMessages}
+                onChange={(event) => setDraft({ ...draft, memorySummaryTriggerMessages: Number(event.target.value) })}
+              />
+            </Field>
+          </div>
         </section>
         <PromptEditor
           title="任务规划策略"
@@ -248,26 +277,30 @@ export function AgentDesigner({
         className="knowledgeSelectDrawer"
         footer={<button className="primaryBtn" onClick={() => setKnowledgeDrawerOpen(false)}><Check size={16} /> 使用当前选择</button>}
       >
-        {!datasets.length ? (
+        {!datasets.length && !missingDatasetIds.length ? (
           <Notice tone="warning">当前工作空间暂无知识库，可先到知识库页面创建数据集。</Notice>
         ) : (
           <div className="knowledgeDrawerGrid">
             <aside className="knowledgeDrawerSidebar">
               <strong>数据集</strong>
-              <span>{draft.knowledgeDatasetIds.length} / {datasets.length} 已选</span>
+              <span>{selectedDatasets.length} / {datasets.length} 可用已选{missingDatasetIds.length ? ` · ${missingDatasetIds.length} 个未加载` : ""}</span>
               <div className="knowledgeOptionList">
-                {datasets.map((dataset) => {
-                  const selected = draft.knowledgeDatasetIds.includes(dataset.id);
-                  return (
-                    <button key={dataset.id} className={`knowledgeSelectItem ${selected ? "active" : ""}`} onClick={() => toggleDataset(dataset.id)}>
-                      <span>{selected && <Check size={13} />}</span>
-                      <div>
-                        <strong>{dataset.name}</strong>
-                        <small>{dataset.id} · {dataset.status}</small>
-                      </div>
-                    </button>
-                  );
-                })}
+                {datasets.length ? (
+                  datasets.map((dataset) => {
+                    const selected = draft.knowledgeDatasetIds.includes(dataset.id);
+                    return (
+                      <button key={dataset.id} className={`knowledgeSelectItem ${selected ? "active" : ""}`} onClick={() => toggleDataset(dataset.id)}>
+                        <span>{selected && <Check size={13} />}</span>
+                        <div>
+                          <strong>{dataset.name}</strong>
+                          <small>{dataset.id} · {dataset.status}</small>
+                        </div>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <Notice tone="warning">当前工作空间暂无可用知识库。</Notice>
+                )}
               </div>
             </aside>
             <section className="knowledgeDrawerMain">
@@ -277,7 +310,23 @@ export function AgentDesigner({
                 <p>知识片段会在运行时注入 Agent 系统提示词。未选择时，Agent 仅使用模型能力和系统提示回答。</p>
               </div>
               <div className="selectedDatasetChips">
-                {selectedDatasets.length ? selectedDatasets.map((dataset) => <span key={dataset.id}>{dataset.name}</span>) : <em>未选择知识库</em>}
+                {selectedDatasets.length || missingDatasetIds.length ? (
+                  <>
+                    {selectedDatasets.map((dataset) => (
+                      <button key={dataset.id} className="selectedDatasetChip" onClick={() => removeDataset(dataset.id)}>
+                        <span>{dataset.name}</span>
+                        <X size={13} />
+                      </button>
+                    ))}
+                    {missingDatasetIds.map((datasetId) => (
+                      <button key={datasetId} className="selectedDatasetChip missing" onClick={() => removeDataset(datasetId)}>
+                        <span>{datasetId}</span>
+                        <small>未加载，可能已删除</small>
+                        <X size={13} />
+                      </button>
+                    ))}
+                  </>
+                ) : <em>未选择知识库</em>}
               </div>
               <div className="formGrid two compactGrid">
                 <Field label="Top K">

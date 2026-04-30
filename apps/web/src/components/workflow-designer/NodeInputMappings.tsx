@@ -8,6 +8,7 @@ const inputTypes: WorkflowNodeInput["type"][] = ["string", "number", "boolean", 
 const groupLabels: Record<WorkflowVariableGroup, string> = {
   input: "输入变量",
   inputs: "用户变量",
+  conversation: "会话记录",
   vars: "应用变量",
   sys: "系统变量",
   nodes: "节点变量",
@@ -97,7 +98,7 @@ function InputVariableMenu({
       groups[variable.group].push(variable);
       return groups;
     },
-    { input: [], inputs: [], vars: [], sys: [], nodes: [], metadata: [] },
+    { input: [], inputs: [], conversation: [], vars: [], sys: [], nodes: [], metadata: [] },
   );
 
   return (

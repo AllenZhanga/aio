@@ -29,6 +29,8 @@ const defaultAgentDraft: AgentDraft = {
   textTemplate: "请根据以下输入生成结构化内容：{{query}}",
   memoryEnabled: true,
   memoryWindowMessages: 10,
+  memorySummaryEnabled: true,
+  memorySummaryTriggerMessages: 12,
 };
 
 type ConsoleCall = <T>(
@@ -140,6 +142,8 @@ export function useAppLifecyclePage({
           textTemplate: definition.ui?.textTemplate || defaultAgentDraft.textTemplate,
           memoryEnabled: definition.memory?.enabled !== false,
           memoryWindowMessages: Number(definition.memory?.windowMessages ?? defaultAgentDraft.memoryWindowMessages),
+          memorySummaryEnabled: definition.memory?.summary?.enabled !== false,
+          memorySummaryTriggerMessages: Number(definition.memory?.summary?.triggerMessages ?? defaultAgentDraft.memorySummaryTriggerMessages),
         });
       }
       if (app.type === "workflow") {
