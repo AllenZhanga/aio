@@ -40,10 +40,10 @@ export function buildWorkflowDefinition(
       type: node.type,
       label: node.label,
       enabled: true,
-      inputs: {},
+      inputs: node.inputs || [],
       config: node.config,
-      outputs: {},
-      runtime: { timeoutSeconds: 60, retry: { maxAttempts: 0 } },
+      outputs: node.outputs || {},
+      runtime: node.runtime || { timeoutSeconds: 60, retry: { maxAttempts: 0 } },
     })),
     edges: edges.map((edge) => ({
       id: edge.id,

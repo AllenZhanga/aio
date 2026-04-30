@@ -6,6 +6,9 @@ import type {
   WorkflowAddNodeOptions,
   WorkflowEdge,
   WorkflowNode,
+  WorkflowNodeInput,
+  WorkflowNodeOutput,
+  WorkflowNodeRuntime,
   WorkflowNodeType,
 } from "../types";
 import {
@@ -42,7 +45,7 @@ export function useWorkflowDesignerPage() {
 
   function resetWorkflowCanvas() {
     setNodes(
-      defaultNodes.map((item) => ({ ...item, config: { ...item.config } })),
+      defaultNodes.map((item) => ({ ...item, inputs: item.inputs?.map((input) => ({ ...input })), config: { ...item.config } })),
     );
     setEdges(defaultEdges.map((item) => ({ ...item })));
     setSelectedNodeId("answer");
@@ -62,6 +65,7 @@ export function useWorkflowDesignerPage() {
   }
 
   function addNode(type: WorkflowNodeType, options: WorkflowAddNodeOptions = {}) {
+    if (type === "start" && nodes.some((node) => node.type === "start")) return;
     const id = `${type}_${Math.random().toString(36).slice(2, 8)}`;
     const index = nodes.length;
     const nextNode = newWorkflowNode(
@@ -131,6 +135,64 @@ export function useWorkflowDesignerPage() {
               ...node,
               config: { ...node.config, [key]: parseConfigValue(key, value) },
             }
+          : node,
+      ),
+    );
+  }
+
+  function updateNodeOutput(nodeId: string, patch: Partial<WorkflowNodeOutput>) {
+    setNodes((current) =>
+      current.map((node) =>
+        node.id === nodeId
+          ? { ...node, outputs: { format: "text", value: "", ...(node.outputs || {}), ...patch } }
+          : node,
+      ),
+    );
+  }
+
+  function updateNodeRuntime(nodeId: string, patch: Partial<WorkflowNodeRuntime>) {
+    setNodes((current) =>
+      current.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              runtime: {
+                timeoutSeconds: node.runtime?.timeoutSeconds ?? 60,
+                ...patch,
+                retry: patch.retry || node.runtime?.retry || { maxAttempts: 0 },
+              },
+            }
+          : node,
+      ),
+    );
+  }
+
+  function updateNodeInput(nodeId: string, index: number, patch: Partial<WorkflowNodeInput>) {
+    setNodes((current) =>
+      current.map((node) => {
+        if (node.id !== nodeId) return node;
+        const inputs = [...(node.inputs || [])];
+        inputs[index] = { ...inputs[index], ...patch };
+        return { ...node, inputs };
+      }),
+    );
+  }
+
+  function addNodeInput(nodeId: string) {
+    setNodes((current) =>
+      current.map((node) =>
+        node.id === nodeId
+          ? { ...node, inputs: [...(node.inputs || []), { name: "", type: "string", value: "" }] }
+          : node,
+      ),
+    );
+  }
+
+  function removeNodeInput(nodeId: string, index: number) {
+    setNodes((current) =>
+      current.map((node) =>
+        node.id === nodeId
+          ? { ...node, inputs: (node.inputs || []).filter((_, itemIndex) => itemIndex !== index) }
           : node,
       ),
     );
@@ -230,7 +292,12 @@ export function useWorkflowDesignerPage() {
       removeEdge,
       updateEdge,
       updateNode,
+      updateNodeInput,
+      addNodeInput,
+      removeNodeInput,
       updateNodeConfig,
+      updateNodeOutput,
+      updateNodeRuntime,
       startDrag,
       startConnect,
       finishConnect,

@@ -3,10 +3,14 @@ package com.dxnow.aio.app.api;
 import com.dxnow.aio.app.domain.AiApp;
 import com.dxnow.aio.app.domain.AiAppDraft;
 import com.dxnow.aio.app.domain.AiAppVersion;
+import com.dxnow.aio.runtime.domain.AiRun;
+import com.dxnow.aio.runtime.service.RuntimeService;
 import com.dxnow.aio.app.service.AppService;
 import com.dxnow.aio.app.service.AppValidationService;
 import java.time.OffsetDateTime;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import javax.validation.Valid;
 import javax.validation.constraints.NotBlank;
@@ -26,10 +30,12 @@ public class AdminAppController {
 
   private final AppService appService;
   private final AppValidationService validationService;
+  private final RuntimeService runtimeService;
 
-  public AdminAppController(AppService appService, AppValidationService validationService) {
+  public AdminAppController(AppService appService, AppValidationService validationService, RuntimeService runtimeService) {
     this.appService = appService;
     this.validationService = validationService;
+    this.runtimeService = runtimeService;
   }
 
   @GetMapping
@@ -115,6 +121,17 @@ public class AdminAppController {
       @RequestHeader(value = "X-Aio-User", required = false) String userId,
       @PathVariable String appId) {
     return DraftValidationResponse.from(appService.validateDraft(tenantId, appId, userId));
+  }
+
+  @PostMapping("/{appId}/draft/run")
+  public DraftRunResponse runDraft(
+      @RequestHeader(value = "X-Aio-Tenant", defaultValue = "default") String tenantId,
+      @RequestHeader(value = "X-Aio-User", required = false) String userId,
+      @PathVariable String appId,
+      @RequestBody(required = false) Map<String, Object> request) {
+    AiAppDraft draft = appService.getOrCreateDraft(tenantId, appId, userId);
+    AiRun run = runtimeService.runDraft(tenantId, appId, draft.getDefinitionJson(), request == null ? Collections.emptyMap() : request, draft.getRevision());
+    return DraftRunResponse.from(draft, run, runtimeService.outputMap(run));
   }
 
   @PostMapping("/{appId}/draft/publish")
@@ -273,6 +290,28 @@ public class AdminAppController {
       response.version = AppVersionResponse.from(result.version);
       response.draft = AppDraftResponse.from(result.draft);
       response.report = result.report;
+      return response;
+    }
+  }
+
+  public static class DraftRunResponse {
+    public AppDraftResponse draft;
+    public String runId;
+    public String runType;
+    public String status;
+    public String currentWaitTaskId;
+    public String errorMessage;
+    public Map<String, Object> outputs;
+
+    static DraftRunResponse from(AiAppDraft draft, AiRun run, Map<String, Object> outputs) {
+      DraftRunResponse response = new DraftRunResponse();
+      response.draft = AppDraftResponse.from(draft);
+      response.runId = run.getId();
+      response.runType = run.getRunType();
+      response.status = run.getStatus();
+      response.currentWaitTaskId = run.getCurrentWaitTaskId();
+      response.errorMessage = run.getErrorMessage();
+      response.outputs = outputs;
       return response;
     }
   }

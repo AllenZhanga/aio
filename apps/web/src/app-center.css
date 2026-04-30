@@ -189,8 +189,11 @@ h1, h2, h3, p { margin-top: 0; }
 .menuField { display: grid; gap: 7px; margin: 10px 0 12px; color: #64748b; font-size: 12px; font-weight: 900; }
 .menuField select { min-height: 36px; padding: 7px 10px; font-size: 12px; }
 
-.consoleBody { display: grid; grid-template-columns: 220px 1fr; min-height: calc(100vh - 58px); }
-.sideNav { padding: 14px 10px; border-right: 1px solid #e5eaf3; background: #f7f9fd; }
+.consoleBody { display: grid; grid-template-columns: 220px 1fr; min-height: calc(100vh - 58px); transition: grid-template-columns .18s ease; }
+.consoleBody.navCollapsed { grid-template-columns: 64px 1fr; }
+.sideNav { min-width: 0; padding: 14px 10px; border-right: 1px solid #e5eaf3; background: #f7f9fd; overflow: hidden; }
+.sideNavTools { display: grid; grid-template-columns: minmax(0, 1fr) 38px; gap: 8px; align-items: center; }
+.sideCollapseBtn { flex: 0 0 auto; }
 .createBtn, .sideItem, .primaryBtn, .ghostBtn, .iconBtn, .backBtn, .typeCard, .appTile, .createCard, .paletteItem, .dangerBtn, .dangerTextBtn, .confirmAcceptBtn, .agentModeRail button {
   display: inline-flex;
   align-items: center;
@@ -205,6 +208,12 @@ h1, h2, h3, p { margin-top: 0; }
 .sideItem.active, .sideItem:hover { background: #e9edf5; color: #172033; }
 .sideSectionLabel { margin: 16px 10px 4px; color: #98a2b8; font-size: 11px; font-weight: 950; letter-spacing: .08em; text-transform: uppercase; }
 .sideGroup { margin: 16px 10px 8px; color: #98a2b8; font-size: 12px; font-weight: 700; line-height: 1.55; }
+.sideNav.collapsed { padding-inline: 8px; }
+.sideNav.collapsed .sideNavTools { grid-template-columns: 1fr; }
+.sideNav.collapsed .createBtn { width: 44px; padding: 0; justify-self: center; }
+.sideNav.collapsed .createBtn span, .sideNav.collapsed .sideItem span, .sideNav.collapsed .sideSectionLabel, .sideNav.collapsed .sideGroup { display: none; }
+.sideNav.collapsed .sideItem { width: 44px; justify-content: center; padding: 0; margin-inline: auto; }
+.sideNav.collapsed .sideCollapseBtn { justify-self: center; }
 
 .workspacePane, .designerPane { padding: 18px 28px 34px; min-width: 0; }
 .pageHeader { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 14px; }
@@ -395,11 +404,18 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .createModal footer { margin-top: 18px; justify-content: flex-end; }
 
 .designerPane { padding: 0; }
-.designerHeader { min-height: 62px; display: grid; grid-template-columns: 122px minmax(220px, 1fr) auto; align-items: center; gap: 12px; padding: 10px 20px; border-bottom: 1px solid #e5eaf3; background: #fff; position: sticky; top: 58px; z-index: 15; }
+.designerHeader { min-height: 58px; display: grid; grid-template-columns: 116px minmax(240px, 1fr) auto; align-items: center; gap: 14px; padding: 8px 18px; border-bottom: 1px solid #e5eaf3; background: rgba(255,255,255,.96); backdrop-filter: blur(12px); position: sticky; top: 58px; z-index: 15; }
 .backBtn { min-height: 36px; color: #34415b; background: transparent; font-weight: 700; font-size: 13px; }
 .designerTitle { gap: 12px; min-width: 0; }
 .designerTitle h1, .designerTitle p { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.designerActions { flex-wrap: wrap; justify-content: flex-end; }
+.designerActions { flex-wrap: nowrap; justify-content: flex-end; }
+.compactAction { padding-inline: 11px; }
+.statusPill.compact { min-height: 26px; padding: 0 9px; white-space: nowrap; }
+.appInfoDrawer { width: min(520px, 100%); }
+.appInfoDrawer .drawerBody { display: grid; align-content: start; gap: 12px; }
+.appInfoSection textarea { min-height: 96px; }
+.appInfoDanger { border-color: #fee2e2; background: linear-gradient(180deg, #fff, #fffafa); }
+.appInfoDanger p { margin: -4px 0 10px; color: #718098; font-size: 12px; line-height: 1.55; }
 
 .releasePanel {
   position: fixed;
@@ -943,13 +959,16 @@ button.entityRow { cursor: pointer; }
 .designCard h3 { margin: 0 0 12px; font-size: 14px; }
 .designCard.preview pre, .definitionPreview pre { max-height: 260px; min-height: 180px; padding: 12px; border-radius: 10px; background: #f8fafc; border: 1px solid #e5eaf3; }
 
-.workflowLayout { display: grid; grid-template-columns: 190px minmax(620px, 1fr) 300px; gap: 14px; padding: 14px; height: calc(100vh - 120px); min-height: 660px; }
-.nodePalette { display: grid; align-content: start; gap: 8px; overflow: auto; }
+.workflowLayout { display: grid; grid-template-columns: 220px minmax(520px, 1fr); gap: 14px; padding: 14px; height: calc(100vh - 116px); min-height: 640px; }
+.nodePalette { display: grid; align-content: start; gap: 8px; overflow: auto; scrollbar-gutter: stable; }
 .paletteGroup { display: grid; gap: 7px; }
 .paletteGroup > span { margin: 8px 2px 0; color: #7b8aa3; font-size: 11px; font-weight: 950; letter-spacing: .08em; text-transform: uppercase; }
-.paletteItem { width: 100%; justify-content: flex-start; min-height: 48px; padding: 0 10px; border: 1px solid #e1e7f2; background: #fff; color: #24324b; text-align: left; }
-.paletteItem strong { flex: 0 0 54px; }
-.paletteItem small { flex: 1; color: #78869e; font-size: 12px; }
+.paletteItem { width: 100%; display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; grid-template-areas: "dot title add" ". desc add"; justify-content: stretch; align-items: center; column-gap: 9px; row-gap: 3px; min-height: 58px; padding: 9px 10px; border: 1px solid #e1e7f2; background: linear-gradient(180deg, #fff, #fbfdff); color: #24324b; text-align: left; }
+.paletteItem .dot { grid-area: dot; }
+.paletteItem strong { grid-area: title; min-width: 0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.paletteItem small { grid-area: desc; min-width: 0; color: #78869e; font-size: 11px; line-height: 1.35; display: -webkit-box; line-clamp: 2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.paletteItem svg { grid-area: add; color: #2563eb; }
+.paletteItem:hover { border-color: #bfdbfe; background: #f7fbff; box-shadow: inset 0 0 0 1px rgba(37, 99, 235, .05); }
 .gestureTip { display: flex; gap: 8px; margin: 10px 0 0; padding: 10px; border-radius: 10px; color: #64748b; background: #f7f9fd; font-size: 12px; line-height: 1.45; }
 .workflowCanvas { position: relative; overflow: hidden; border: 1px solid #dfe6f1; border-radius: 14px; background: radial-gradient(circle at 16px 16px, rgba(37, 99, 235, .16) 1px, transparent 1px), #fbfdff; background-size: 26px 26px; touch-action: none; }
 .xyflowCanvas .react-flow { border-radius: 14px; background: linear-gradient(180deg, #fbfdff, #f6f9ff); }
@@ -991,6 +1010,113 @@ button.entityRow { cursor: pointer; }
 .nodeAddMenu section > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
 .nodeAddMenu section button { display: inline-flex; min-width: 0; min-height: 34px; align-items: center; justify-content: flex-start; gap: 7px; padding: 0 9px; border: 1px solid #e2eaf6; border-radius: 10px; color: #24324b; background: #fbfdff; font-size: 12px; font-weight: 900; }
 .nodeAddMenu section button span:last-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.workflowPropertyPanel {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 25;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(460px, calc(100% - 36px));
+  max-height: calc(100% - 36px);
+  border: 1px solid rgba(205, 217, 234, .96);
+  border-radius: 14px;
+  background: rgba(255,255,255,.97);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, .22);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+.propertyPanelHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px; border-bottom: 1px solid #e7edf6; }
+.propertyPanelTitle { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; min-width: 0; }
+.propertyPanelTitle .dot { margin-top: 6px; }
+.propertyPanelTitle h3 { margin: 0; color: #172033; font-size: 15px; line-height: 1.3; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.propertyPanelTitle p { margin: 4px 0 0; color: #718098; font-size: 12px; line-height: 1.45; }
+.propertyTitleInput, .propertyDescInput { width: 100%; min-height: 24px; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.propertyTitleInput { color: #172033; font-size: 15px; font-weight: 950; }
+.propertyDescInput { color: #718098; font-size: 12px; }
+.propertyTitleInput:focus, .propertyDescInput:focus { outline: none; box-shadow: none; }
+.propertyPanelBody { display: grid; gap: 12px; min-height: 0; padding: 14px; overflow: auto; scrollbar-gutter: stable; }
+.propertySection { display: grid; gap: 10px; padding: 12px; border: 1px solid #e3ebf6; border-radius: 12px; background: #fbfdff; }
+.propertySectionTitle { display: inline-flex; align-items: center; gap: 7px; color: #24324b; font-size: 13px; }
+.ioSection { background: linear-gradient(180deg, #fbfdff, #f6faff); }
+.propertyIoGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.propertyIoGrid.single { grid-template-columns: 1fr; }
+.propertyIoGrid article { min-width: 0; padding: 10px; border: 1px solid #e3ebf6; border-radius: 10px; background: #fff; }
+.propertyIoGrid span { color: #7b8aa3; font-size: 11px; font-weight: 950; letter-spacing: .06em; }
+.propertyIoGrid strong { display: block; margin-top: 4px; color: #172033; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.propertyIoGrid p { margin: 5px 0 0; color: #718098; font-size: 11px; line-height: 1.4; }
+.propertyAdvanced textarea { min-height: 150px; font-family: SFMono-Regular, Consolas, monospace; font-size: 11px; }
+.workflowOutputEditor, .llmConfigFields { display: grid; gap: 10px; }
+.runtimeSection input { min-height: 36px; }
+.nodeInputMappings { display: grid; gap: 8px; min-width: 0; }
+.nodeInputHeader { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.4fr) 34px; gap: 8px; align-items: center; color: #8a95aa; font-size: 12px; font-weight: 900; }
+.nodeInputHeader button { display: grid; width: 34px; height: 34px; place-items: center; border: 0; border-radius: 8px; color: #1d4ed8; background: #e8edff; }
+.nodeInputRows { display: grid; gap: 8px; }
+.nodeInputRow { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.4fr) 28px; gap: 8px; align-items: start; }
+.nodeInputRow > input, .nodeInputValueCell > input, .nodeInputValueCell > select { min-width: 0; min-height: 36px; border-radius: 9px; font-size: 13px; }
+.nodeInputValueCell { position: relative; display: grid; grid-template-columns: 72px minmax(0, 1fr) 34px; gap: 6px; min-width: 0; }
+.nodeInputValueCell > select { padding: 0 8px; color: #5b667a; font-weight: 900; }
+.nodeInputValueCell > button { display: grid; width: 34px; height: 36px; place-items: center; border: 1px solid #bfdbfe; border-radius: 9px; color: #1d4ed8; background: #eff6ff; }
+.nodeInputRemove { width: 28px; height: 36px; padding: 0; border: 0; color: #475569; background: transparent; font-size: 20px; line-height: 1; }
+.nodeInputEmpty { display: flex; gap: 8px; align-items: flex-start; padding: 10px; border: 1px dashed #cbd7ea; border-radius: 10px; color: #718098; background: #fff; font-size: 12px; line-height: 1.45; }
+.inputVariableMenu { position: absolute; top: 42px; right: 0; z-index: 45; width: min(360px, 100vw - 48px); max-height: 360px; overflow: auto; padding: 10px; border: 1px solid #d7e4f5; border-radius: 12px; background: #fff; box-shadow: 0 18px 44px rgba(15, 23, 42, .18); }
+.inputVariableMenu header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.inputVariableMenu header strong { color: #172033; font-size: 12px; }
+.inputVariableMenu header button { display: grid; width: 26px; height: 26px; place-items: center; padding: 0; border: 1px solid #e2eaf6; border-radius: 8px; color: #64748b; background: #fff; }
+.inputVariableMenu section { display: grid; gap: 5px; margin-top: 8px; }
+.inputVariableMenu section > strong { display: inline-flex; align-items: center; justify-content: space-between; color: #38445b; font-size: 13px; }
+.inputVariableMenu section button { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; min-height: 42px; padding: 7px 8px; border: 1px solid #e3ebf6; border-radius: 9px; color: #1f2a44; background: #fbfdff; text-align: left; }
+.inputVariableMenu section button span, .inputVariableMenu section button code { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.inputVariableMenu section button span { font-size: 12px; font-weight: 900; }
+.inputVariableMenu section button code { color: #1d4ed8; font-family: SFMono-Regular, Consolas, monospace; font-size: 11px; }
+.inputVariableMenu section button em { grid-row: span 2; padding: 2px 6px; border-radius: 999px; color: #64748b; background: #eef2f7; font-size: 10px; font-style: normal; font-weight: 900; }
+.inputVariableMenu p { margin: 0; color: #718098; font-size: 12px; }
+.workflowConfigInput { display: grid; gap: 8px; min-width: 0; padding: 8px; border: 1px solid #dfe8f5; border-radius: 12px; background: #fff; }
+.configInputToolbar { display: flex; flex-wrap: wrap; gap: 6px; }
+.configInputToolbar button { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 9px; border: 1px solid #e2eaf6; border-radius: 8px; color: #53627b; background: #f8fbff; font-size: 12px; font-weight: 900; }
+.configInputToolbar button.active { border-color: #bfdbfe; color: #1d4ed8; background: #eff6ff; box-shadow: inset 0 0 0 1px rgba(37, 99, 235, .06); }
+.workflowConfigInput textarea, .richTextSurface { min-height: 96px; width: 100%; padding: 10px; border: 1px solid #e3ebf6; border-radius: 10px; background: #fbfdff; color: #172033; font-size: 13px; line-height: 1.5; resize: vertical; }
+.workflowConfigInput.json textarea { min-height: 150px; font-family: SFMono-Regular, Consolas, monospace; font-size: 12px; }
+.richTextSurface { overflow: auto; outline: none; white-space: pre-wrap; }
+.richTextSurface:empty::before { content: attr(data-placeholder); color: #94a3b8; }
+.variableChipBar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.variableChipBar span, .variableChipBar button { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 0 8px; border-radius: 999px; font-size: 11px; font-weight: 900; }
+.variableChipBar span { color: #64748b; background: #f1f5f9; }
+.variableChipBar button { border: 1px solid #dbeafe; color: #1e40af; background: #eff6ff; font-family: SFMono-Regular, Consolas, monospace; }
+.variablePickerWrap { position: relative; min-width: 0; }
+.variableInsertRow { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; }
+.variableInsertRow > span { display: inline-flex; min-width: 0; align-items: center; gap: 5px; color: #64748b; font-size: 11px; font-weight: 850; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.variableInsertRow > button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; min-height: 28px; padding: 0 9px; border: 1px solid #bfdbfe; border-radius: 8px; color: #1d4ed8; background: #eff6ff; font-size: 12px; font-weight: 900; }
+.variablePicker {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  display: grid;
+  gap: 8px;
+  width: min(360px, 100%);
+  padding: 10px;
+  border: 1px solid #d7e4f5;
+  border-radius: 12px;
+  background: rgba(255,255,255,.99);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, .18);
+}
+.variablePickerHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.variablePickerHeader strong { color: #172033; font-size: 12px; }
+.variablePickerHeader button { display: grid; width: 26px; height: 26px; place-items: center; padding: 0; border: 1px solid #e2eaf6; border-radius: 8px; color: #64748b; background: #fff; }
+.variablePickerSearch { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 7px; min-height: 32px; padding: 0 9px; border: 1px solid #e3ebf6; border-radius: 9px; color: #64748b; background: #f8fbff; }
+.variablePickerSearch input { min-height: 28px; padding: 0; border: 0; background: transparent; font-size: 12px; }
+.variablePickerSearch input:focus { outline: none; box-shadow: none; }
+.variableGroupList { display: grid; gap: 8px; max-height: 240px; overflow: auto; scrollbar-gutter: stable; }
+.variableGroup { display: grid; gap: 5px; }
+.variableGroup > strong { color: #7b8aa3; font-size: 11px; font-weight: 950; letter-spacing: .06em; }
+.variableGroup button { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px; align-items: center; min-height: 38px; padding: 7px 8px; border: 1px solid #dbeafe; border-radius: 9px; color: #1e3a8a; background: #eff6ff; text-align: left; }
+.variableGroup button span { min-width: 0; }
+.variableGroup button b, .variableGroup button code { display: block; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.variableGroup button b { color: #1f2a44; font-size: 12px; }
+.variableGroup button code { margin-top: 2px; color: #1d4ed8; font-family: SFMono-Regular, Consolas, monospace; font-size: 11px; }
+.variableGroup button em { padding: 2px 6px; border-radius: 999px; color: #64748b; background: #fff; font-size: 10px; font-style: normal; font-weight: 900; }
+.emptyVariableHint { margin: 0; padding: 8px; color: #718098; font-size: 12px; }
 .inspector { overflow: auto; }
 .inspector textarea { min-height: 82px; }
 .inspectorStack { display: grid; gap: 10px; }

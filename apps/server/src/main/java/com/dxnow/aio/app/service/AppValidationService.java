@@ -155,7 +155,7 @@ public class AppValidationService {
       report.add("error", "workflow.node_type_required", "节点类型不能为空", "节点 " + id + " 缺少 type。", "nodes." + id + ".type");
       return;
     }
-    if ("llm".equals(type) && config.path("prompt").asText("").trim().isBlank()) {
+    if ("llm".equals(type) && config.path("userPrompt").asText(config.path("prompt").asText("")).trim().isBlank()) {
       report.add("error", "workflow.llm_prompt_required", "LLM 节点 Prompt 不能为空", "节点 " + id + " 需要配置 prompt。", "nodes." + id + ".config.prompt");
     }
     if ("tool".equals(type) && config.path("toolId").asText("").trim().isBlank()) {
@@ -223,16 +223,12 @@ public class AppValidationService {
 
   private void validateVariables(JsonNode root, Set<String> nodeIds, ValidationReport report) {
     Set<String> allowedRoots = new HashSet<>(nodeIds);
+    allowedRoots.add("input");
     allowedRoots.add("inputs");
     allowedRoots.add("vars");
     allowedRoots.add("nodes");
     allowedRoots.add("sys");
     allowedRoots.add("metadata");
-    allowedRoots.add("env");
-    allowedRoots.add("run_id");
-    allowedRoots.add("app_id");
-    allowedRoots.add("user_id");
-    allowedRoots.add("tenant_id");
     collectVariableReferences(root, allowedRoots, nodeIds, report, "definition");
   }
 

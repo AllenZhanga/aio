@@ -9,6 +9,7 @@ import type {
   AppRecord,
   CenterView,
   DraftPublishResponse,
+  DraftRunResponse,
   DraftValidationResponse,
   ValidationReport,
 } from "../types";
@@ -38,7 +39,6 @@ export function useAppLifecyclePage({
   call,
   setStatus,
   setView,
-  runtimeKey,
   workflowDefinition,
   resetWorkflowCanvas,
   restoreWorkflowCanvas,
@@ -317,15 +317,34 @@ export function useAppLifecyclePage({
     }
   }
 
+  async function updateSelectedAppInfo(app: AppRecord, updates: { name: string; description?: string }) {
+    setBusyAction("app-info");
+    try {
+      const updated = await call<AppRecord>(`/api/aio/admin/apps/${app.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          name: updates.name,
+          description: updates.description || "",
+          visibility: app.visibility,
+          status: app.status,
+        }),
+      });
+      setApps((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setStatus("应用信息已保存");
+      return updated;
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "应用信息保存失败");
+      return null;
+    } finally {
+      setBusyAction("");
+    }
+  }
+
   async function invokeSelectedApp() {
     setBusyAction("run");
     try {
       if (!selectedApp) throw new Error("请先选择应用");
-      if (!runtimeKey) throw new Error("请先在 API Key 菜单创建或填入 Runtime API Key");
-      const path =
-        selectedApp.type === "workflow"
-          ? `/v1/apps/${selectedApp.id}/run`
-          : `/v1/apps/${selectedApp.id}/chat`;
+      const draft = await saveCurrentDraftNow();
       const body =
         selectedApp.type === "workflow"
           ? {
@@ -336,13 +355,15 @@ export function useAppLifecyclePage({
               response_mode: "blocking",
             }
           : { query: "请用三句话介绍这个应用可以做什么", stream: false };
-      const response = await call<Record<string, unknown>>(
-        path,
-        { method: "POST", body: JSON.stringify(body) },
-        true,
-      );
+      const response = await call<DraftRunResponse>(`/api/aio/admin/apps/${selectedApp.id}/draft/run`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      setCurrentDraft(response.draft);
       setRunResult(response);
-      setStatus("试运行完成");
+      setDraftSaveState("saved");
+      setDraftSaveMessage(response.draft.dirty ? `草稿已保存，有未发布修改 · r${draft.revision}` : "草稿与线上版本一致");
+      setStatus(response.status === "failed" ? (response.errorMessage || "草稿试运行失败") : "草稿试运行完成，线上版本未受影响");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "调用失败");
     } finally {
@@ -398,6 +419,7 @@ export function useAppLifecyclePage({
     confirmPublishSelectedApp,
     validateSelectedApp,
     archiveApp,
+    updateSelectedAppInfo,
     invokeSelectedApp,
   };
 }

@@ -137,11 +137,54 @@ public class RuntimeService {
     run.setStatus("running");
     run = runRepository.save(run);
     try {
-      executeWorkflow(run, version, newWorkflowContext(request), null);
+      executeWorkflow(run, version, newWorkflowContext(request, run), null);
     } catch (RuntimeException exception) {
       run.setStatus("failed");
       run.setErrorMessage(exception.getMessage());
       createTrace(run, "workflow_node", "workflow.error", request, Collections.emptyMap(), "failed", 0, null, exception.getMessage());
+    }
+    run.setLatencyMs(Duration.between(start, Instant.now()).toMillis());
+    return runRepository.save(run);
+  }
+
+  @Transactional
+  public AiRun runDraft(String tenantId, String appId, String definitionJson, Map<String, Object> request, int draftRevision) {
+    Instant start = Instant.now();
+    AiApp app = appRepository.findByTenantIdAndId(tenantId, appId)
+        .orElseThrow(() -> new EntityNotFoundException("App not found"));
+    if (definitionJson == null || definitionJson.isBlank()) {
+      throw new IllegalArgumentException("Draft definition cannot be empty");
+    }
+    AiRun run = new AiRun();
+    run.setId(Ids.prefixed("run"));
+    run.setTenantId(app.getTenantId());
+    run.setWorkspaceId(app.getWorkspaceId());
+    run.setAppId(app.getId());
+    run.setRunType(app.getType() + "_draft");
+    Map<String, Object> input = new LinkedHashMap<>();
+    input.put("run_source", "draft");
+    input.put("draft_revision", draftRevision);
+    input.put("request", request == null ? Collections.emptyMap() : request);
+    run.setInputJson(toJson(input));
+    run.setStatus("running");
+    run = runRepository.save(run);
+    try {
+      if ("agent".equals(app.getType())) {
+        Map<String, Object> output = invokeAgent(app, transientVersion(app, definitionJson), request == null ? Collections.emptyMap() : request, run);
+        output.put("run_source", "draft");
+        output.put("draft_revision", draftRevision);
+        run.setOutputJson(toJson(output));
+        run.setTotalTokens(asInt(castMap(output.get("usage")).get("total_tokens")));
+        run.setStatus("success");
+      } else if ("workflow".equals(app.getType())) {
+        executeWorkflow(run, definitionJson, newWorkflowContext(request, run), null);
+      } else {
+        throw new IllegalArgumentException("App type does not support draft run");
+      }
+    } catch (RuntimeException exception) {
+      run.setStatus("failed");
+      run.setErrorMessage(exception.getMessage());
+      createTrace(run, "draft", "draft.error", request, Collections.emptyMap(), "failed", 0, null, exception.getMessage());
     }
     run.setLatencyMs(Duration.between(start, Instant.now()).toMillis());
     return runRepository.save(run);
@@ -196,7 +239,7 @@ public class RuntimeService {
     runRepository.save(run);
     Map<String, Object> state = workflowState(run);
     Map<String, Object> context = castMap(state.getOrDefault("context", new LinkedHashMap<>()));
-    context.put(task.getNodeId(), request == null ? Collections.emptyMap() : request);
+    writeNodeOutput(context, task.getNodeId(), request == null ? Collections.emptyMap() : request);
     AiAppVersion version = versionRepository.findByTenantIdAndId(principal.getTenantId(), run.getAppVersionId())
         .orElseThrow(() -> new EntityNotFoundException("Published app version not found"));
     executeWorkflow(run, version, context, task.getNodeId());
@@ -324,9 +367,13 @@ public class RuntimeService {
     return outputs;
   }
 
-  @SuppressWarnings("unchecked")
   private void executeWorkflow(AiRun run, AiAppVersion version, Map<String, Object> context, String resumeFromNodeId) {
-    Map<String, Object> definition = parseMap(version.getDefinitionJson());
+    executeWorkflow(run, version.getDefinitionJson(), context, resumeFromNodeId);
+  }
+
+  @SuppressWarnings("unchecked")
+  private void executeWorkflow(AiRun run, String definitionJson, Map<String, Object> context, String resumeFromNodeId) {
+    Map<String, Object> definition = parseMap(definitionJson);
     List<Map<String, Object>> nodes = (List<Map<String, Object>>) definition.getOrDefault("nodes", Collections.emptyList());
     List<Map<String, Object>> edges = (List<Map<String, Object>>) definition.getOrDefault("edges", Collections.emptyList());
     if (nodes.isEmpty()) {
@@ -339,20 +386,27 @@ public class RuntimeService {
       Map<String, Object> node = findNode(nodes, current);
       String type = stringValue(node.get("type"));
       Map<String, Object> config = castMap(node.getOrDefault("config", Collections.emptyMap()));
+      Map<String, Object> nodeContext = new LinkedHashMap<>(context);
+      nodeContext.put("input", resolveNodeInputs(node, context));
+      Map<String, Object> runtime = castMap(node.getOrDefault("runtime", Collections.emptyMap()));
       Instant started = Instant.now();
       if ("user_confirm".equals(type) || "user_form".equals(type)) {
         AiTrace trace = createTrace(run, "workflow_node", current, config, Collections.singletonMap("status", "waiting"), "success", Duration.between(started, Instant.now()).toMillis(), null, null);
-        AiWaitTask task = createWaitTask(run, trace, node, config, context);
+        AiWaitTask task = createWaitTask(run, trace, node, config, nodeContext);
         run.setStatus("waiting");
         run.setCurrentWaitTaskId(task.getId());
         run.setOutputJson(toJson(workflowState(context, current)));
         return;
       }
-      Map<String, Object> output = executeWorkflowNode(run, type, config, context);
-      context.put(current, output);
+      Map<String, Object> output = executeWorkflowNodeWithRetry(run, type, config, nodeContext, runtime);
       Object traceInput = output.remove("__traceInput");
       Object traceOutput = output.remove("__traceOutput");
       Object traceToken = output.remove("__traceToken");
+      output = applyNodeOutputs(node, output, nodeContext);
+      writeNodeOutput(context, current, output);
+      if ("variable".equals(type)) {
+        castMap(context.computeIfAbsent("vars", ignored -> new LinkedHashMap<>())).putAll(output);
+      }
       createTrace(run, "workflow_node", current, traceInput == null ? config : traceInput, traceOutput == null ? output : traceOutput, "success", Duration.between(started, Instant.now()).toMillis(), traceToken, null);
       if ("end".equals(type)) {
         run.setStatus("success");
@@ -368,13 +422,69 @@ public class RuntimeService {
     run.setOutputJson(toJson(context));
   }
 
+  private Map<String, Object> executeWorkflowNodeWithRetry(AiRun run, String type, Map<String, Object> config, Map<String, Object> context, Map<String, Object> runtime) {
+    int maxAttempts = asInt(castMap(runtime.getOrDefault("retry", Collections.emptyMap())).getOrDefault("maxAttempts", 0));
+    RuntimeException last = null;
+    for (int attempt = 0; attempt <= Math.max(0, maxAttempts); attempt++) {
+      try {
+        return executeWorkflowNode(run, type, config, context);
+      } catch (RuntimeException exception) {
+        last = exception;
+      }
+    }
+    throw last == null ? new IllegalArgumentException("Workflow node failed") : last;
+  }
+
+  private Map<String, Object> applyNodeOutputs(Map<String, Object> node, Map<String, Object> output, Map<String, Object> nodeContext) {
+    Map<String, Object> outputs = castMap(node.get("outputs"));
+    if (outputs.isEmpty() || !outputs.containsKey("value")) {
+      return output;
+    }
+    Map<String, Object> outputContext = new LinkedHashMap<>(nodeContext);
+    outputContext.put("nodes", new LinkedHashMap<>(castMap(nodeContext.get("nodes"))));
+    castMap(outputContext.get("nodes")).put("self", output);
+    Object value = interpolate(outputs.get("value"), outputContext);
+    if ("json".equals(stringValue(outputs.get("format")))) {
+      output.put("outputs", value);
+    } else {
+      output.put("text".equals(stringValue(outputs.get("format"))) ? "text" : "outputs", value);
+    }
+    return output;
+  }
+
+  @SuppressWarnings("unchecked")
+  private Map<String, Object> resolveNodeInputs(Map<String, Object> node, Map<String, Object> context) {
+    Object rawInputs = node.get("inputs");
+    Map<String, Object> resolved = new LinkedHashMap<>();
+    if (rawInputs instanceof List) {
+      for (Object item : (List<Object>) rawInputs) {
+        Map<String, Object> input = castMap(item);
+        String name = stringValue(input.get("name")).trim();
+        if (!name.isBlank()) {
+          resolved.put(name, interpolate(input.get("value"), context));
+        }
+      }
+    } else if (rawInputs instanceof Map) {
+      for (Map.Entry<String, Object> entry : ((Map<String, Object>) rawInputs).entrySet()) {
+        resolved.put(entry.getKey(), interpolate(entry.getValue(), context));
+      }
+    }
+    return resolved;
+  }
+
   private Map<String, Object> executeWorkflowNode(AiRun run, String type, Map<String, Object> config, Map<String, Object> context) {
     Map<String, Object> output = new LinkedHashMap<>();
     if ("start".equals(type)) {
       output.put("inputs", context.get("inputs"));
+      output.putAll(castMap(context.get("inputs")));
     } else if ("variable".equals(type)) {
-      for (Map.Entry<String, Object> entry : config.entrySet()) {
-        output.put(entry.getKey(), interpolate(entry.getValue(), context));
+      String variableName = stringValue(config.get("name")).trim();
+      if (!variableName.isBlank()) {
+        output.put(variableName, interpolate(config.get("value"), context));
+      } else {
+        for (Map.Entry<String, Object> entry : config.entrySet()) {
+          output.put(entry.getKey(), interpolate(entry.getValue(), context));
+        }
       }
     } else if ("condition".equals(type)) {
       output.put("matched", evaluateCondition(stringValue(config.get("expression")), context));
@@ -386,12 +496,13 @@ public class RuntimeService {
       }
       output.put("chunks", knowledgeService.retrieve(run.getTenantId(), datasetId, query, asInt(config.getOrDefault("topK", 5)), asDouble(config.getOrDefault("scoreThreshold", 0.0))));
     } else if ("llm".equals(type)) {
-      String prompt = stringValue(interpolate(config.getOrDefault("prompt", ""), context));
-      LlmResult llm = callChatModel(run.getTenantId(), config, "你是工作流中的 LLM 节点。", prompt);
+      String systemPrompt = stringValue(interpolate(config.getOrDefault("systemPrompt", "你是工作流中的 LLM 节点。"), context));
+      String prompt = stringValue(interpolate(config.getOrDefault("userPrompt", config.getOrDefault("prompt", "")), context));
+      LlmResult llm = callChatModel(run.getTenantId(), config, systemPrompt, prompt);
       output.put("text", llm.answer);
       output.put("usage", llm.usage);
       Map<String, Object> traceInput = new LinkedHashMap<>();
-      traceInput.put("system", "你是工作流中的 LLM 节点。");
+      traceInput.put("system", systemPrompt);
       traceInput.put("prompt", prompt);
       traceInput.put("node_config", config);
       traceInput.put("provider_request", llm.request);
@@ -453,11 +564,17 @@ public class RuntimeService {
     task.setUiSchemaJson(toJson(config.getOrDefault("uiSchema", Collections.emptyMap())));
     task.setActionSchemaJson(toJson(config.getOrDefault("actions", Collections.emptyList())));
     task.setDefaultValuesJson(toJson(config.getOrDefault("defaultValues", Collections.emptyMap())));
-    task.setContextJson(toJson(context));
+    task.setContextJson(toJson(contextWithoutLocalInput(context)));
     task.setStatus("pending");
     int expires = asInt(config.getOrDefault("expiresInSeconds", 86400));
     task.setExpiresAt(OffsetDateTime.now().plusSeconds(expires <= 0 ? 86400 : expires));
     return waitTaskRepository.save(task);
+  }
+
+  private Map<String, Object> contextWithoutLocalInput(Map<String, Object> context) {
+    Map<String, Object> cleaned = new LinkedHashMap<>(context);
+    cleaned.remove("input");
+    return cleaned;
   }
 
   private LlmResult callChatModel(String tenantId, Map<String, Object> model, String systemPrompt, String userPrompt) {
@@ -660,6 +777,16 @@ public class RuntimeService {
     return traceRepository.save(trace);
   }
 
+  private AiAppVersion transientVersion(AiApp app, String definitionJson) {
+    AiAppVersion version = new AiAppVersion();
+    version.setTenantId(app.getTenantId());
+    version.setWorkspaceId(app.getWorkspaceId());
+    version.setAppId(app.getId());
+    version.setType(app.getType());
+    version.setDefinitionJson(definitionJson);
+    return version;
+  }
+
   private AiApp loadRunnableApp(ApiKeyPrincipal principal, String appId, String expectedType) {
     AiApp app = appRepository.findByTenantIdAndId(principal.getTenantId(), appId)
         .orElseThrow(() -> new EntityNotFoundException("App not found"));
@@ -696,11 +823,28 @@ public class RuntimeService {
     }
   }
 
-  private Map<String, Object> newWorkflowContext(Map<String, Object> request) {
+  private Map<String, Object> newWorkflowContext(Map<String, Object> request, AiRun run) {
     Map<String, Object> context = new LinkedHashMap<>();
     context.put("inputs", request == null ? Collections.emptyMap() : request.getOrDefault("inputs", Collections.emptyMap()));
     context.put("metadata", request == null ? Collections.emptyMap() : request.getOrDefault("metadata", Collections.emptyMap()));
+    context.put("vars", new LinkedHashMap<>());
+    context.put("nodes", new LinkedHashMap<>());
+    Map<String, Object> sys = new LinkedHashMap<>();
+    sys.put("runId", run.getId());
+    sys.put("appId", run.getAppId());
+    sys.put("tenantId", run.getTenantId());
+    sys.put("workspaceId", run.getWorkspaceId());
+    context.put("sys", sys);
     return context;
+  }
+
+  @SuppressWarnings("unchecked")
+  private void writeNodeOutput(Map<String, Object> context, String nodeId, Map<String, Object> output) {
+    context.put(nodeId, output);
+    Object nodesValue = context.computeIfAbsent("nodes", ignored -> new LinkedHashMap<>());
+    if (nodesValue instanceof Map) {
+      ((Map<String, Object>) nodesValue).put(nodeId, output);
+    }
   }
 
   private Map<String, Object> workflowState(AiRun run) {

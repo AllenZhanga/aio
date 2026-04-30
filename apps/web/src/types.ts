@@ -28,6 +28,7 @@ export type AppRecord = {
   id: string;
   name: string;
   type: AppKind;
+  description?: string;
   status: string;
   visibility?: string;
   updatedAt?: string;
@@ -61,6 +62,15 @@ export type DraftPublishResponse = {
   draft: AppDraft;
   report: ValidationReport;
 };
+export type DraftRunResponse = {
+  draft: AppDraft;
+  runId: string;
+  runType: string;
+  status: string;
+  currentWaitTaskId?: string | null;
+  errorMessage?: string | null;
+  outputs: Record<string, unknown>;
+};
 export type AgentDraft = {
   mode: AgentMode;
   providerAccountId: string;
@@ -91,9 +101,26 @@ export type WorkflowNode = {
   id: string;
   type: WorkflowNodeType;
   label: string;
+  description?: string;
   x: number;
   y: number;
+  inputs?: WorkflowNodeInput[];
+  outputs?: WorkflowNodeOutput;
+  runtime?: WorkflowNodeRuntime;
   config: Record<string, unknown>;
+};
+export type WorkflowNodeInput = {
+  name: string;
+  type: "string" | "number" | "boolean" | "object" | "array";
+  value: string;
+};
+export type WorkflowNodeOutput = {
+  format: "text" | "json";
+  value: string;
+};
+export type WorkflowNodeRuntime = {
+  timeoutSeconds: number;
+  retry: { maxAttempts: number };
 };
 export type WorkflowAddNodeOptions = {
   position?: { x: number; y: number };
@@ -113,6 +140,7 @@ export type WorkflowDesignerProps = {
   canvasRef: RefObject<HTMLDivElement>;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+  modelOptions?: ModelOption[];
   connecting: ConnectState | null;
   selectedNode?: WorkflowNode;
   selectedEdge?: WorkflowEdge;
@@ -123,7 +151,12 @@ export type WorkflowDesignerProps = {
   removeEdge: (edgeId: string) => void;
   updateEdge: (edgeId: string, condition: string) => void;
   updateNode: (nodeId: string, patch: Partial<WorkflowNode>) => void;
+  updateNodeInput: (nodeId: string, index: number, patch: Partial<WorkflowNodeInput>) => void;
+  addNodeInput: (nodeId: string) => void;
+  removeNodeInput: (nodeId: string, index: number) => void;
   updateNodeConfig: (nodeId: string, key: string, value: string) => void;
+  updateNodeOutput: (nodeId: string, patch: Partial<WorkflowNodeOutput>) => void;
+  updateNodeRuntime: (nodeId: string, patch: Partial<WorkflowNodeRuntime>) => void;
   startDrag: (event: PointerEvent, node: WorkflowNode) => void;
   startConnect: (event: PointerEvent, node: WorkflowNode) => void;
   finishConnect: (event: PointerEvent, targetId: string) => void;

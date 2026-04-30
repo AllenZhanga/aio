@@ -56,6 +56,7 @@ export default function App() {
   );
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const [sideNavCollapsed, setSideNavCollapsed] = useState(false);
   const confirmation = useConfirmDialog();
   const consoleSession = useConsoleSession({
     setStatus,
@@ -150,7 +151,7 @@ export default function App() {
     createApp,
     publishSelectedApp,
     archiveApp,
-    invokeSelectedApp,
+    updateSelectedAppInfo,
   } = appLifecyclePage;
   const experienceBusyAction =
     experiencePage.busyAction || appLifecyclePage.busyAction;
@@ -429,11 +430,13 @@ export default function App() {
         openProviders={openProviders}
         logout={consoleSession.logoutConsole}
       />
-      <section className="consoleBody">
+      <section className={`consoleBody ${sideNavCollapsed ? "navCollapsed" : ""}`}>
         <SideNav
           activeView={view}
           session={authSession}
+          collapsed={sideNavCollapsed}
           onCreate={() => openCreateModal("agent", "agent")}
+          onToggleCollapsed={() => setSideNavCollapsed((collapsed) => !collapsed)}
           openApps={backToCenter}
           openObservability={() => openObservability()}
           openTasks={openTasks}
@@ -568,8 +571,8 @@ export default function App() {
             setReleasePanelOpen={setReleasePanelOpen}
             publishSelectedApp={publishSelectedApp}
             confirmPublishSelectedApp={appLifecyclePage.confirmPublishSelectedApp}
-            invokeSelectedApp={invokeSelectedApp}
             archiveApp={archiveApp}
+            updateAppInfo={updateSelectedAppInfo}
             openApiDocs={openApiDocs}
             openObservability={openObservability}
             openExperience={openExperience}
@@ -595,5 +598,4 @@ export default function App() {
     </main>
   );
 }
-
 

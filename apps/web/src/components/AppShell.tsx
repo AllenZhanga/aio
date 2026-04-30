@@ -1,4 +1,4 @@
-import { AlertCircle, Bot, Boxes, Building2, Database, KeyRound, Loader2, Play, Plus, Settings2, ShieldCheck, Sparkles, UserCheck, X } from "lucide-react";
+import { AlertCircle, Bot, Boxes, Building2, Database, KeyRound, Loader2, PanelLeftClose, PanelLeftOpen, Play, Plus, Settings2, ShieldCheck, Sparkles, UserCheck, X } from "lucide-react";
 import type { AuthSession, CenterView, WorkspaceRecord } from "../types";
 import { Field } from "./ui";
 
@@ -184,7 +184,9 @@ export function TopNav({
 export function SideNav({
   activeView,
   session,
+  collapsed,
   onCreate,
+  onToggleCollapsed,
   openApps,
   openObservability,
   openTasks,
@@ -195,7 +197,9 @@ export function SideNav({
 }: {
   activeView: CenterView;
   session: AuthSession;
+  collapsed: boolean;
   onCreate: () => void;
+  onToggleCollapsed: () => void;
   openApps: () => void;
   openObservability: () => void;
   openTasks: () => void;
@@ -204,20 +208,26 @@ export function SideNav({
   openApiKeys: () => void;
   openOrg: () => void;
 }) {
+  const appActive = activeView === "center" || activeView === "designer" || activeView === "experience" || activeView === "api";
   return (
-    <aside className="sideNav">
-      <button className="createBtn" onClick={onCreate}><Plus size={17} /> 创建应用</button>
+    <aside className={`sideNav ${collapsed ? "collapsed" : ""}`} aria-label="主菜单">
+      <div className="sideNavTools">
+        <button className="createBtn" onClick={onCreate} title="创建应用"><Plus size={17} /> <span>创建应用</span></button>
+        <button className="iconBtn sideCollapseBtn" onClick={onToggleCollapsed} title={collapsed ? "展开菜单" : "隐藏菜单"} aria-label={collapsed ? "展开菜单" : "隐藏菜单"}>
+          {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+        </button>
+      </div>
       <p className="sideSectionLabel">构建</p>
-      <button className={`sideItem ${activeView === "center" || activeView === "designer" || activeView === "experience" || activeView === "api" ? "active" : ""}`} onClick={openApps}><Boxes size={18} /> 应用</button>
-      <button className={`sideItem ${activeView === "knowledge" ? "active" : ""}`} onClick={openKnowledge}><Database size={18} /> 知识库</button>
+      <button className={`sideItem ${appActive ? "active" : ""}`} onClick={openApps} title="应用"><Boxes size={18} /> <span>应用</span></button>
+      <button className={`sideItem ${activeView === "knowledge" ? "active" : ""}`} onClick={openKnowledge} title="知识库"><Database size={18} /> <span>知识库</span></button>
       <p className="sideSectionLabel">运行</p>
-      <button className={`sideItem ${activeView === "observability" ? "active" : ""}`} onClick={openObservability}><Play size={18} /> 运行记录</button>
-      <button className={`sideItem ${activeView === "tasks" ? "active" : ""}`} onClick={openTasks}><UserCheck size={18} /> 人工任务</button>
+      <button className={`sideItem ${activeView === "observability" ? "active" : ""}`} onClick={openObservability} title="运行记录"><Play size={18} /> <span>运行记录</span></button>
+      <button className={`sideItem ${activeView === "tasks" ? "active" : ""}`} onClick={openTasks} title="人工任务"><UserCheck size={18} /> <span>人工任务</span></button>
       <p className="sideSectionLabel">集成配置</p>
-      <button className={`sideItem ${activeView === "providers" ? "active" : ""}`} onClick={openProviders}><Bot size={18} /> 模型供应商</button>
-      <button className={`sideItem ${activeView === "apiKeys" ? "active" : ""}`} onClick={openApiKeys}><KeyRound size={18} /> API Key</button>
+      <button className={`sideItem ${activeView === "providers" ? "active" : ""}`} onClick={openProviders} title="模型供应商"><Bot size={18} /> <span>模型供应商</span></button>
+      <button className={`sideItem ${activeView === "apiKeys" ? "active" : ""}`} onClick={openApiKeys} title="API Key"><KeyRound size={18} /> <span>API Key</span></button>
       <p className="sideSectionLabel">组织</p>
-      <button className={`sideItem ${activeView === "org" ? "active" : ""}`} onClick={openOrg}><Building2 size={18} /> 组织设置</button>
+      <button className={`sideItem ${activeView === "org" ? "active" : ""}`} onClick={openOrg} title="组织设置"><Building2 size={18} /> <span>组织设置</span></button>
       <p className="sideGroup">当前空间：{session.workspaceId}<br />账号：{session.displayName || session.userId}</p>
     </aside>
   );

@@ -250,6 +250,41 @@ class AioApplicationTests {
       .andExpect(jsonPath("$.publishedVersionId").value(publishedVersionId));
   }
 
+  @Test
+  void workflowDraftCanRunWithoutPublishingOnlineVersion() throws Exception {
+    String consoleToken = loginToken();
+    String appResponse = createWorkflowApp(consoleToken);
+    String appId = extract(appResponse, "id");
+
+    Map<String, Object> saveRequest = new LinkedHashMap<>();
+    saveRequest.put("definitionJson", workflowDraftRunDefinition());
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/aio/admin/apps/" + appId + "/draft")
+        .header("Authorization", "Bearer " + consoleToken)
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(objectMapper.writeValueAsString(saveRequest)))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.dirty").value(true));
+
+    Map<String, Object> runRequest = new LinkedHashMap<>();
+    Map<String, Object> inputs = new LinkedHashMap<>();
+    inputs.put("question", "草稿试运行输入");
+    runRequest.put("inputs", inputs);
+    mockMvc.perform(post("/api/aio/admin/apps/" + appId + "/draft/run")
+        .header("Authorization", "Bearer " + consoleToken)
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(objectMapper.writeValueAsString(runRequest)))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.runType").value("workflow_draft"))
+      .andExpect(jsonPath("$.status").value("success"))
+      .andExpect(jsonPath("$.outputs.outputs").value("草稿输出：草稿试运行输入"));
+
+    mockMvc.perform(get("/api/aio/admin/apps/" + appId)
+        .header("Authorization", "Bearer " + consoleToken))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.status").value("draft"))
+      .andExpect(jsonPath("$.publishedVersionId").doesNotExist());
+  }
+
     @Test
     void knowledgeDocumentCanBeUploadedAsFile() throws Exception {
     String consoleToken = loginToken();
@@ -637,6 +672,24 @@ class AioApplicationTests {
         + "{\"id\":\"edge_start_answer\",\"from\":\"start\",\"to\":\"answer\"},"
         + "{\"id\":\"edge_answer_confirm\",\"from\":\"answer\",\"to\":\"confirm\"},"
         + "{\"id\":\"edge_confirm_end\",\"from\":\"confirm\",\"to\":\"end\",\"condition\":\"{{nodes.confirm.action == 'approve'}}\"}"
+        + "]"
+        + "}";
+  }
+
+  private String workflowDraftRunDefinition() {
+    return "{"
+        + "\"type\":\"workflow\","
+        + "\"version\":1,"
+        + "\"inputs\":[{\"name\":\"question\",\"type\":\"string\",\"required\":true}],"
+        + "\"variables\":[],"
+        + "\"nodes\":["
+        + "{\"id\":\"start\",\"type\":\"start\",\"label\":\"开始\",\"config\":{}},"
+        + "{\"id\":\"capture\",\"type\":\"variable\",\"label\":\"记录变量\",\"config\":{\"draftAnswer\":\"{{inputs.question}}\"}},"
+        + "{\"id\":\"end\",\"type\":\"end\",\"label\":\"结束\",\"config\":{\"output\":\"草稿输出：{{nodes.capture.draftAnswer}}\"}}"
+        + "],"
+        + "\"edges\":["
+        + "{\"id\":\"edge_start_capture\",\"from\":\"start\",\"to\":\"capture\"},"
+        + "{\"id\":\"edge_capture_end\",\"from\":\"capture\",\"to\":\"end\"}"
         + "]"
         + "}";
   }

@@ -13,10 +13,12 @@ const categoryOrder = ["basic", "ai", "knowledge", "tool", "control", "human", "
 
 export function NodeAddMenu({
   state,
+  excludedTypes = ["start"],
   onPick,
   onClose,
 }: {
   state: NodeAddMenuState;
+  excludedTypes?: WorkflowNodeType[];
   onPick: (type: WorkflowNodeType) => void;
   onClose: () => void;
 }) {
@@ -27,7 +29,10 @@ export function NodeAddMenu({
         <button className="ghostTinyBtn" onClick={onClose} aria-label="关闭"><X size={13} /></button>
       </header>
       {categoryOrder.map((category) => {
-        const specs = (Object.keys(nodeSpecs) as WorkflowNodeType[]).map((type) => nodeSpecs[type]).filter((spec) => spec.category === category);
+        const specs = (Object.keys(nodeSpecs) as WorkflowNodeType[])
+          .filter((type) => !excludedTypes.includes(type))
+          .map((type) => nodeSpecs[type])
+          .filter((spec) => spec.category === category);
         if (!specs.length) return null;
         return (
           <section key={category}>

@@ -13,14 +13,13 @@ import {
   type Node,
   type NodeChange,
 } from "@xyflow/react";
-import { MousePointer2, PanelRight, Plus, X } from "lucide-react";
+import { MousePointer2, Plus } from "lucide-react";
 import type { AgentMode, WorkflowDesignerProps, WorkflowEdge as AppWorkflowEdge, WorkflowNode, WorkflowNodeType } from "../../types";
-import { Field } from "../ui";
 import { NodeAddMenu, type NodeAddMenuState } from "./NodeAddMenu";
-import { NodeConfigFields } from "./NodeConfigFields";
+import { WorkflowPropertyPanel } from "./WorkflowPropertyPanel";
 import { WorkflowEdge, type WorkflowEdgeData } from "./WorkflowEdge";
 import { WorkflowNodeCard, type WorkflowNodeData } from "./WorkflowNodeCard";
-import { createWorkflowNode, nodePlugin } from "./nodeRegistry";
+import { createWorkflowNode, defaultNodeInputs } from "./nodeRegistry";
 import { nodeCategoryLabels, nodeSpec, nodeSpecs } from "./nodeSpecs";
 
 export const nodeMeta: Record<WorkflowNodeType, { name: string; description: string; accent: string }> = Object.fromEntries(
@@ -32,16 +31,18 @@ export const nodeMeta: Record<WorkflowNodeType, { name: string; description: str
 
 export const defaultNodes: WorkflowNode[] = [
   { id: "start", type: "start", label: "开始", x: 72, y: 180, config: {} },
-  { id: "answer", type: "llm", label: "生成回复", x: 360, y: 130, config: { prompt: "请基于输入给出处理建议：{{inputs.question}}" } },
+  { id: "answer", type: "llm", label: "生成回复", x: 360, y: 130, inputs: [{ name: "prompt", type: "string", value: "{{inputs.question}}" }], outputs: { format: "text", value: "{{nodes.answer.text}}" }, runtime: { timeoutSeconds: 60, retry: { maxAttempts: 0 } }, config: { systemPrompt: "你是工作流中的 LLM 节点。", userPrompt: "请基于输入给出处理建议：{{input.prompt}}", temperature: 0.3 } },
   {
     id: "confirm",
     type: "user_confirm",
     label: "人工确认",
     x: 650,
     y: 180,
+    inputs: [{ name: "description", type: "string", value: "{{nodes.answer.text}}" }],
+    runtime: { timeoutSeconds: 86400, retry: { maxAttempts: 0 } },
     config: {
       title: "确认处理方案",
-      description: "{{nodes.answer.text}}",
+      description: "{{input.description}}",
       actions: [
         { key: "approve", label: "确认" },
         { key: "reject", label: "拒绝" },
@@ -49,7 +50,7 @@ export const defaultNodes: WorkflowNode[] = [
       expiresInSeconds: 86400,
     },
   },
-  { id: "end", type: "end", label: "结束", x: 940, y: 180, config: { output: "{{nodes.answer.text}}" } },
+  { id: "end", type: "end", label: "结束", x: 940, y: 180, inputs: [{ name: "output", type: "string", value: "{{nodes.answer.text}}" }], outputs: { format: "text", value: "{{input.output}}" }, runtime: { timeoutSeconds: 60, retry: { maxAttempts: 0 } }, config: { output: "{{input.output}}" } },
 ];
 
 export const defaultEdges: AppWorkflowEdge[] = [
@@ -73,6 +74,8 @@ export function WorkflowDesigner(props: WorkflowDesignerProps) {
 function WorkflowDesignerContent(props: WorkflowDesignerProps) {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [addMenu, setAddMenu] = useState<NodeAddMenuState | null>(null);
+  const [propertyPanelOpen, setPropertyPanelOpen] = useState(false);
+  const hasStartNode = props.nodes.some((node) => node.type === "start");
 
   const flowNodes = useMemo<Node<WorkflowNodeData>[]>(
     () => props.nodes.map((node) => ({
@@ -143,6 +146,7 @@ function WorkflowDesignerContent(props: WorkflowDesignerProps) {
       });
     }
     setAddMenu(null);
+    setPropertyPanelOpen(true);
   }
 
   function onNodesChange(changes: NodeChange<Node<WorkflowNodeData>>[]) {
@@ -152,6 +156,7 @@ function WorkflowDesignerContent(props: WorkflowDesignerProps) {
       }
       if (change.type === "select" && change.selected) {
         props.selectNode(change.id);
+        setPropertyPanelOpen(true);
       }
     }
   }
@@ -173,7 +178,16 @@ function WorkflowDesignerContent(props: WorkflowDesignerProps) {
             <section className="paletteGroup" key={category}>
               <span>{nodeCategoryLabels[category]}</span>
               {specs.map((spec) => (
-                <button className="paletteItem" key={spec.type} onClick={() => props.addNode(spec.type)}>
+                <button
+                  className="paletteItem"
+                  key={spec.type}
+                  disabled={spec.type === "start" && hasStartNode}
+                  title={spec.type === "start" && hasStartNode ? "开始节点只能存在一个" : spec.displayName}
+                  onClick={() => {
+                    props.addNode(spec.type);
+                    setPropertyPanelOpen(true);
+                  }}
+                >
                   <span className={`dot ${spec.accent}`} />
                   <strong>{spec.displayName}</strong>
                   <small>{spec.description}</small>
@@ -193,8 +207,14 @@ function WorkflowDesignerContent(props: WorkflowDesignerProps) {
           edgeTypes={edgeTypes}
           onNodesChange={onNodesChange}
           onConnect={onConnect}
-          onNodeClick={(_event: ReactMouseEvent, node: Node<WorkflowNodeData>) => props.selectNode(node.id)}
-          onEdgeClick={(_event: ReactMouseEvent, edge: Edge<WorkflowEdgeData>) => props.selectEdge(edge.id)}
+          onNodeClick={(_event: ReactMouseEvent, node: Node<WorkflowNodeData>) => {
+            props.selectNode(node.id);
+            setPropertyPanelOpen(true);
+          }}
+          onEdgeClick={(_event: ReactMouseEvent, edge: Edge<WorkflowEdgeData>) => {
+            props.selectEdge(edge.id);
+            setPropertyPanelOpen(true);
+          }}
           onPaneClick={() => setAddMenu(null)}
           fitView
           fitViewOptions={{ padding: 0.24 }}
@@ -206,57 +226,11 @@ function WorkflowDesignerContent(props: WorkflowDesignerProps) {
           <Controls position="bottom-left" />
         </ReactFlow>
         {addMenu && <NodeAddMenu state={addMenu} onPick={createNodeFromMenu} onClose={() => setAddMenu(null)} />}
+        {propertyPanelOpen && (props.selectedNode || props.selectedEdge) && (
+          <WorkflowPropertyPanel workflow={props} onClose={() => setPropertyPanelOpen(false)} />
+        )}
       </div>
-      <WorkflowInspector {...props} />
     </div>
-  );
-}
-
-function WorkflowInspector(props: WorkflowDesignerProps) {
-  return (
-    <aside className="inspector designCard">
-      <div className="sectionTitle"><PanelRight size={18} /><h3>属性</h3></div>
-      {props.selectedNode && (
-        <div className="inspectorStack">
-          <Field label="节点名称">
-            <input value={props.selectedNode.label} onChange={(event) => props.updateNode(props.selectedNode!.id, { label: event.target.value })} />
-          </Field>
-          <div className="nodeTypeBanner">
-            <span className={`dot ${nodeSpec(props.selectedNode.type).accent}`} />
-            <strong>{nodeSpec(props.selectedNode.type).displayName}</strong>
-            <small>{nodeSpec(props.selectedNode.type).description}</small>
-          </div>
-          <h4>输入</h4>
-          <p className="mutedText">{nodePlugin(props.selectedNode.type).spec.inputSummary.join("、") || "无输入"}</p>
-          <h4>配置</h4>
-          <NodeConfigFields node={props.selectedNode} updateNodeConfig={props.updateNodeConfig} />
-          <h4>输出</h4>
-          <p className="mutedText">{nodePlugin(props.selectedNode.type).spec.outputSummary.join("、") || "无输出"}</p>
-          <details className="advancedNodeDetails">
-            <summary>高级</summary>
-            <Field label="节点 ID"><input value={props.selectedNode.id} readOnly /></Field>
-            <Field label="内部类型"><input value={props.selectedNode.type} readOnly /></Field>
-          </details>
-          <button className="dangerBtn" disabled={props.selectedNode.id === "start" || props.selectedNode.id === "end"} onClick={() => props.removeNode(props.selectedNode!.id)}>
-            <X size={16} /> 删除节点
-          </button>
-        </div>
-      )}
-      {props.selectedEdge && (
-        <div className="inspectorStack">
-          <Field label="连线"><input value={`${props.selectedEdge.from} → ${props.selectedEdge.to}`} readOnly /></Field>
-          <Field label="条件表达式">
-            <textarea value={props.selectedEdge.condition || ""} onChange={(event) => props.updateEdge(props.selectedEdge!.id, event.target.value)} placeholder="{{nodes.confirm.action == 'approve'}}" />
-          </Field>
-          <button className="dangerBtn" onClick={() => props.removeEdge(props.selectedEdge!.id)}><X size={16} /> 删除连线</button>
-        </div>
-      )}
-      {!props.selectedNode && !props.selectedEdge && <p className="mutedText">选择节点或连线后编辑属性。</p>}
-      <div className="definitionPreview">
-        <h3>Workflow JSON</h3>
-        <pre>{JSON.stringify(props.workflowDefinition, null, 2)}</pre>
-      </div>
-    </aside>
   );
 }
 
@@ -272,10 +246,13 @@ export function restoreWorkflowDefinition(definition: Record<string, any>): { no
           label: String(item.label || ui.label || nodeSpec(type).defaultLabel),
           x: Number(ui.x ?? item.x ?? 72 + index * 260),
           y: Number(ui.y ?? item.y ?? 160 + (index % 2) * 100),
+          inputs: normalizeNodeInputs(item.inputs, type),
+          outputs: normalizeNodeOutput(item.outputs, type),
+          runtime: normalizeNodeRuntime(item.runtime),
           config: typeof item.config === "object" && item.config ? item.config : { ...nodeSpec(type).defaultConfig },
         } as WorkflowNode;
       })
-    : defaultNodes.map((item) => ({ ...item, config: { ...item.config } }));
+    : defaultNodes.map((item) => ({ ...item, inputs: item.inputs?.map((input) => ({ ...input })), config: { ...item.config } }));
   const edges = Array.isArray(definition.edges)
     ? definition.edges.map((item: Record<string, any>, index: number) => ({
         id: String(item.id || `edge_${String(item.from)}_${String(item.to)}_${index}`),
@@ -287,9 +264,50 @@ export function restoreWorkflowDefinition(definition: Record<string, any>): { no
   return { nodes, edges };
 }
 
+function normalizeNodeOutput(value: unknown, type: WorkflowNodeType) {
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const format = record.format === "json" ? "json" : "text";
+    return { format, value: typeof record.value === "string" ? record.value : "" };
+  }
+  if (type === "llm") return { format: "text" as const, value: "{{nodes.self.text}}" };
+  if (type === "end") return { format: "text" as const, value: "{{input.output}}" };
+  return undefined;
+}
+
+function normalizeNodeRuntime(value: unknown) {
+  const record = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const retry = record.retry && typeof record.retry === "object" ? record.retry as Record<string, unknown> : {};
+  return {
+    timeoutSeconds: Number(record.timeoutSeconds ?? 60),
+    retry: { maxAttempts: Number(retry.maxAttempts ?? 0) },
+  };
+}
+
+function normalizeNodeInputs(value: unknown, type: WorkflowNodeType) {
+  if (!Array.isArray(value)) return defaultNodeInputs(type);
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as Record<string, unknown>;
+      return {
+        name: typeof record.name === "string" ? record.name : "",
+        type: normalizeInputType(record.type),
+        value: typeof record.value === "string" ? record.value : "",
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => !!item && !!item.name);
+}
+
+function normalizeInputType(type: unknown) {
+  return ["string", "number", "boolean", "object", "array"].includes(String(type))
+    ? String(type) as "string" | "number" | "boolean" | "object" | "array"
+    : "string";
+}
+
 export function parseConfigValue(key: string, value: string): unknown {
   const trimmed = value.trim();
-  if (["topK", "scoreThreshold", "expiresInSeconds"].includes(key) && trimmed !== "") {
+  if (["topK", "scoreThreshold", "expiresInSeconds", "temperature"].includes(key) && trimmed !== "") {
     const numeric = Number(trimmed);
     return Number.isNaN(numeric) ? value : numeric;
   }
