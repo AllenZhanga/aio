@@ -140,6 +140,9 @@ export type WorkflowDesignerProps = {
   canvasRef: RefObject<HTMLDivElement>;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+  apps?: AppRecord[];
+  datasets?: DatasetRecord[];
+  tools?: ToolRecord[];
   modelOptions?: ModelOption[];
   connecting: ConnectState | null;
   selectedNode?: WorkflowNode;
@@ -162,6 +165,7 @@ export type WorkflowDesignerProps = {
   finishConnect: (event: PointerEvent, targetId: string) => void;
   moveOnCanvas: (event: PointerEvent) => void;
   stopCanvasInteraction: () => void;
+  autoLayout: () => void;
   selectNode: (nodeId: string) => void;
   selectEdge: (edgeId: string) => void;
 };
@@ -220,6 +224,19 @@ export type DatasetRecord = {
   embeddingProviderId?: string;
   embeddingModel?: string;
   chunkStrategy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+export type ToolRecord = {
+  id: string;
+  tenantId?: string;
+  workspaceId?: string;
+  name: string;
+  type: string;
+  description?: string;
+  inputSchema?: string;
+  configJson?: string;
+  status: string;
   createdAt?: string;
   updatedAt?: string;
 };

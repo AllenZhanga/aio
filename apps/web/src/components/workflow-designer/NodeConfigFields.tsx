@@ -1,4 +1,4 @@
-import type { WorkflowEdge, ModelOption, WorkflowNode } from "../../types";
+import type { AppRecord, DatasetRecord, ModelOption, ToolRecord, WorkflowEdge, WorkflowNode } from "../../types";
 import { Field } from "../ui";
 import { WorkflowConfigInput } from "./WorkflowConfigInput";
 import { nodePlugin } from "./nodeRegistry";
@@ -10,18 +10,33 @@ export function NodeConfigFields({
   nodes,
   edges,
   modelOptions = [],
+  apps = [],
+  datasets = [],
+  tools = [],
   updateNodeConfig,
 }: {
   node: WorkflowNode;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   modelOptions?: ModelOption[];
+  apps?: AppRecord[];
+  datasets?: DatasetRecord[];
+  tools?: ToolRecord[];
   updateNodeConfig: (nodeId: string, key: string, value: string) => void;
 }) {
   const plugin = nodePlugin(node.type);
   const variables = availableVariablesForNode({ currentNodeId: node.id, nodes, edges, includeCurrentInputs: true });
   if (node.type === "llm") {
     return <LlmConfigFields node={node} variables={variables} modelOptions={modelOptions} updateNodeConfig={updateNodeConfig} />;
+  }
+  if (node.type === "agent") {
+    return <AgentNodeConfigFields node={node} apps={apps} updateNodeConfig={updateNodeConfig} />;
+  }
+  if (node.type === "knowledge_retrieval") {
+    return <KnowledgeNodeConfigFields node={node} datasets={datasets} updateNodeConfig={updateNodeConfig} />;
+  }
+  if (node.type === "tool") {
+    return <ToolNodeConfigFields node={node} variables={variables} tools={tools} updateNodeConfig={updateNodeConfig} />;
   }
   if (plugin.renderConfig) {
     const CustomConfig = plugin.renderConfig;
@@ -42,6 +57,98 @@ export function NodeConfigFields({
         />
       ))}
     </>
+  );
+}
+
+function AgentNodeConfigFields({
+  node,
+  apps,
+  updateNodeConfig,
+}: {
+  node: WorkflowNode;
+  apps: AppRecord[];
+  updateNodeConfig: (nodeId: string, key: string, value: string) => void;
+}) {
+  const agentApps = apps.filter((app) => app.type === "agent" && app.status !== "archived");
+  return (
+    <div className="nodeSpecificFields">
+      <Field label="智能体应用" hint="选择已创建的 Agent，运行时会把输入区的 query 交给该智能体。">
+        <select value={configValueToString(node.config.appId)} onChange={(event) => updateNodeConfig(node.id, "appId", event.target.value)}>
+          <option value="">请选择智能体应用</option>
+          {agentApps.map((app) => <option key={app.id} value={app.id}>{app.name}</option>)}
+        </select>
+      </Field>
+      <div className="nodeOutputHint">
+        <strong>输出</strong>
+        <span>{`{{nodes.${node.id}.answer}}`}</span>
+        <span>{`{{nodes.${node.id}.outputs}}`}</span>
+      </div>
+    </div>
+  );
+}
+
+function KnowledgeNodeConfigFields({
+  node,
+  datasets,
+  updateNodeConfig,
+}: {
+  node: WorkflowNode;
+  datasets: DatasetRecord[];
+  updateNodeConfig: (nodeId: string, key: string, value: string) => void;
+}) {
+  return (
+    <div className="nodeSpecificFields">
+      <Field label="知识库" hint="选择当前工作空间中可用的数据集。检索问题建议从输入区 query 引用。">
+        <select value={configValueToString(node.config.datasetId)} onChange={(event) => updateNodeConfig(node.id, "datasetId", event.target.value)}>
+          <option value="">请选择知识库</option>
+          {datasets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}
+        </select>
+      </Field>
+      <div className="formGrid two compactGrid">
+        <ConfigField field={{ key: "topK", label: "Top K", kind: "number" }} value={configValueToString(node.config.topK)} variables={[]} onChange={(value) => updateNodeConfig(node.id, "topK", value)} />
+        <ConfigField field={{ key: "scoreThreshold", label: "Score 阈值", kind: "number" }} value={configValueToString(node.config.scoreThreshold)} variables={[]} onChange={(value) => updateNodeConfig(node.id, "scoreThreshold", value)} />
+      </div>
+      <div className="nodeOutputHint">
+        <strong>输出结构</strong>
+        <span>{`{{nodes.${node.id}.chunks}}`}</span>
+        <code>{`[{ content, score, metadata, documentId }]`}</code>
+      </div>
+    </div>
+  );
+}
+
+function ToolNodeConfigFields({
+  node,
+  variables,
+  tools,
+  updateNodeConfig,
+}: {
+  node: WorkflowNode;
+  variables: WorkflowVariableOption[];
+  tools: ToolRecord[];
+  updateNodeConfig: (nodeId: string, key: string, value: string) => void;
+}) {
+  const selectedTool = tools.find((tool) => tool.id === node.config.toolId);
+  return (
+    <div className="nodeSpecificFields">
+      <Field label="工具插件" hint="选择平台工具或 MCP 同步出的工具。工具制作规范来自工具管理里的 inputSchema 和执行类型。">
+        <select value={configValueToString(node.config.toolId)} onChange={(event) => updateNodeConfig(node.id, "toolId", event.target.value)}>
+          <option value="">请选择工具</option>
+          {tools.filter((tool) => tool.status === "active").map((tool) => <option key={tool.id} value={tool.id}>{tool.name} · {tool.type}</option>)}
+        </select>
+      </Field>
+      <ConfigField
+        field={{ key: "input", label: "工具入参", kind: "json", hint: selectedTool?.inputSchema || "按工具 inputSchema 传入 JSON，可引用输入变量。" }}
+        value={configValueToString(node.config.input)}
+        variables={variables}
+        onChange={(value) => updateNodeConfig(node.id, "input", value)}
+      />
+      <div className="nodeOutputHint">
+        <strong>输出</strong>
+        <span>{`{{nodes.${node.id}.output}}`}</span>
+        <span>{`{{nodes.${node.id}.latency_ms}}`}</span>
+      </div>
+    </div>
   );
 }
 

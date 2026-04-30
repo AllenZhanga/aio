@@ -63,28 +63,7 @@ export function useExperiencePage({
         selectedApp.type === "workflow"
           ? `/v1/apps/${selectedApp.id}/run`
           : `/v1/apps/${selectedApp.id}/chat`;
-      if (selectedApp.type === "agent") {
-        await sendStreamingAgentMessage(path, prompt);
-        return;
-      }
-      const body = {
-        inputs: {
-          question: prompt,
-          operator_id: authSession?.userId || "console-user",
-        },
-        response_mode: "blocking",
-      };
-      const response = await call<RuntimeResponse>(
-        path,
-        { method: "POST", body: JSON.stringify(body) },
-        true,
-      );
-      appendRuntimeResponse(response, selectedApp.type);
-      setStatus(
-        response.status === "waiting"
-          ? "AI 应用正在等待用户反馈"
-          : "AI 应用体验完成",
-      );
+      await sendStreamingMessage(path, prompt, selectedApp.type);
     } catch (error) {
       appendSystem(error instanceof Error ? error.message : "应用体验调用失败");
       setStatus(error instanceof Error ? error.message : "应用体验调用失败");
@@ -188,7 +167,7 @@ export function useExperiencePage({
     ]);
   }
 
-  async function sendStreamingAgentMessage(path: string, prompt: string) {
+  async function sendStreamingMessage(path: string, prompt: string, type: AppKind) {
     const assistantId = `msg_${Date.now()}_assistant_stream`;
     let streamedText = "";
     let completed = false;
@@ -202,7 +181,17 @@ export function useExperiencePage({
         "Content-Type": "application/json",
         Authorization: `Bearer ${runtimeKey}`,
       },
-      body: JSON.stringify({ query: prompt, stream: true }),
+      body: JSON.stringify(
+        type === "agent"
+          ? { query: prompt, stream: true }
+          : {
+              inputs: {
+                question: prompt,
+                operator_id: authSession?.userId || "console-user",
+              },
+              response_mode: "streaming",
+            },
+      ),
     });
     if (!response.ok) {
       const text = await response.text();
@@ -218,7 +207,7 @@ export function useExperiencePage({
     if (!contentType.includes("text/event-stream") || !response.body) {
       const payload = (await response.json()) as RuntimeResponse;
       setMessages((current) => current.filter((message) => message.id !== assistantId));
-      appendRuntimeResponse(payload, "agent");
+      appendRuntimeResponse(payload, type);
       setStatus("AI 应用体验完成");
       return;
     }
@@ -239,7 +228,17 @@ export function useExperiencePage({
       }
       if (isCompletedEvent(event)) {
         completed = true;
-        const answer = runtimeResponseText(data as RuntimeResponse) || streamedText;
+        const payload = data as RuntimeResponse;
+        if (payload.status === "waiting" && payload.wait_task) {
+          setMessages((current) => current.filter((message) => message.id !== assistantId));
+          appendWait(payload.wait_task);
+          setStatus("AI 应用正在等待用户反馈");
+          return;
+        }
+        const answer =
+          type === "agent"
+            ? runtimeResponseText(payload) || streamedText
+            : runtimeOutputText(payload.outputs, payload.status) || streamedText;
         const responseDetails = runtimeResponseDetails(data as RuntimeResponse);
         updateMessage(assistantId, {
           text: answer || "已完成。",

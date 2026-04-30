@@ -7,7 +7,9 @@ export type WorkflowNodeData = {
   nodeId: string;
   type: WorkflowNodeType;
   label: string;
+  description?: string;
   selected?: boolean;
+  hasOutgoing?: boolean;
   onAddAfter?: (nodeId: string, clientX: number, clientY: number) => void;
 };
 
@@ -23,26 +25,24 @@ export function WorkflowNodeCard({ data, selected }: NodeProps) {
         <span className={`dot ${spec.accent}`} />
         <strong>{nodeData.label || spec.displayName}</strong>
       </div>
-      <p>{spec.description}</p>
+      <p title={nodeData.description || spec.description}>{nodeData.description || spec.description}</p>
       <div className="nodeIoSummary">
         <span>输入 {spec.inputSummary.length || "无"}</span>
         <span>输出 {spec.outputSummary.join("、") || "无"}</span>
       </div>
-      {canConnectOut && (
-        <>
-          <Handle className="xyHandle out" type="source" position={Position.Right} id="main" />
-          <button
-            className="nodeQuickAdd"
-            type="button"
-            aria-label="新增后继节点"
-            onClick={(event) => {
-              event.stopPropagation();
-              nodeData.onAddAfter?.(nodeData.nodeId, event.clientX, event.clientY);
-            }}
-          >
-            <Plus size={13} />
-          </button>
-        </>
+      {canConnectOut && <Handle className="xyHandle out" type="source" position={Position.Right} id="main" />}
+      {canConnectOut && !nodeData.hasOutgoing && (
+        <button
+          className="nodeQuickAdd"
+          type="button"
+          aria-label="新增后继节点"
+          onClick={(event) => {
+            event.stopPropagation();
+            nodeData.onAddAfter?.(nodeData.nodeId, event.clientX, event.clientY);
+          }}
+        >
+          <Plus size={13} />
+        </button>
       )}
     </article>
   );

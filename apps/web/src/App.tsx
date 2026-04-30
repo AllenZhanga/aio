@@ -39,6 +39,7 @@ import type {
   AppRecord,
   CenterView,
   ModelOption,
+  ToolRecord,
 } from "./types";
 import "./app-center.css";
 
@@ -57,6 +58,7 @@ export default function App() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [sideNavCollapsed, setSideNavCollapsed] = useState(false);
+  const [tools, setTools] = useState<ToolRecord[]>([]);
   const confirmation = useConfirmDialog();
   const consoleSession = useConsoleSession({
     setStatus,
@@ -250,6 +252,12 @@ export default function App() {
   useEffect(() => {
     if (authSession && view === "knowledge") void knowledgePage.refreshKnowledge();
   }, [authSession?.token, view]);
+  useEffect(() => {
+    if (!authSession) return;
+    void call<ToolRecord[]>("/api/aio/admin/tools")
+      .then(setTools)
+      .catch(() => setTools([]));
+  }, [authSession?.token]);
   useEffect(() => {
     if (
       authSession &&
@@ -551,6 +559,7 @@ export default function App() {
         ) : (
           <DesignerPage
             selectedApp={selectedApp}
+            apps={apps}
             selectedAppId={selectedAppId}
             appsLoading={appsLoading}
             definitionLoading={definitionLoading}
@@ -559,6 +568,7 @@ export default function App() {
             setAgentDraft={setAgentDraft}
             modelOptions={modelOptions}
             datasets={knowledgePage.datasets}
+            tools={tools}
             runResult={runResult}
             runtimeKey={runtimeKey}
             setRuntimeKey={setRuntimeKey}
@@ -598,4 +608,3 @@ export default function App() {
     </main>
   );
 }
-

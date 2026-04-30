@@ -69,7 +69,7 @@ export function NodeInputMappings({
                 />
               )}
             </div>
-            <button type="button" className="nodeInputRemove" onClick={() => workflow.removeNodeInput(node.id, index)} aria-label="删除输入变量">-</button>
+            <button type="button" className="nodeInputRemove" onClick={() => workflow.removeNodeInput(node.id, index)} aria-label="删除输入变量"><X size={14} /></button>
           </div>
         ))}
         {!rows.length && (

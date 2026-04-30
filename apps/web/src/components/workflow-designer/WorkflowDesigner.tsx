@@ -13,7 +13,7 @@ import {
   type Node,
   type NodeChange,
 } from "@xyflow/react";
-import { MousePointer2, Plus } from "lucide-react";
+import { LayoutGrid, MousePointer2, Plus } from "lucide-react";
 import type { AgentMode, WorkflowDesignerProps, WorkflowEdge as AppWorkflowEdge, WorkflowNode, WorkflowNodeType } from "../../types";
 import { NodeAddMenu, type NodeAddMenuState } from "./NodeAddMenu";
 import { WorkflowPropertyPanel } from "./WorkflowPropertyPanel";
@@ -31,7 +31,7 @@ export const nodeMeta: Record<WorkflowNodeType, { name: string; description: str
 
 export const defaultNodes: WorkflowNode[] = [
   { id: "start", type: "start", label: "开始", x: 72, y: 180, config: {} },
-  { id: "answer", type: "llm", label: "生成回复", x: 360, y: 130, inputs: [{ name: "prompt", type: "string", value: "{{inputs.question}}" }], outputs: { format: "text", value: "{{nodes.answer.text}}" }, runtime: { timeoutSeconds: 60, retry: { maxAttempts: 0 } }, config: { systemPrompt: "你是工作流中的 LLM 节点。", userPrompt: "请基于输入给出处理建议：{{input.prompt}}", temperature: 0.3 } },
+  { id: "answer", type: "llm", label: "生成回复", x: 360, y: 130, inputs: [{ name: "prompt", type: "string", value: "{{inputs.question}}" }], outputs: { format: "text", value: "{{nodes.self.text}}" }, runtime: { timeoutSeconds: 60, retry: { maxAttempts: 0 } }, config: { systemPrompt: "你是工作流中的 LLM 节点。", userPrompt: "请基于输入给出处理建议：{{input.prompt}}", temperature: 0.3 } },
   {
     id: "confirm",
     type: "user_confirm",
@@ -86,11 +86,13 @@ function WorkflowDesignerContent(props: WorkflowDesignerProps) {
         nodeId: node.id,
         type: node.type,
         label: node.label,
+        description: node.description,
         selected: props.selectedNode?.id === node.id,
+        hasOutgoing: props.edges.some((edge) => edge.from === node.id),
         onAddAfter: (nodeId, clientX, clientY) => openAddMenu({ sourceId: nodeId, clientX, clientY }),
       },
     })),
-    [props.nodes, props.selectedNode?.id],
+    [props.nodes, props.edges, props.selectedNode?.id],
   );
 
   const flowEdges = useMemo<Edge<WorkflowEdgeData>[]>(
@@ -170,7 +172,12 @@ function WorkflowDesignerContent(props: WorkflowDesignerProps) {
   return (
     <div className="workflowLayout xyflowDesigner">
       <aside className="nodePalette designCard">
-        <h3>节点</h3>
+        <div className="nodePaletteHeader">
+          <h3>节点</h3>
+          <button type="button" className="ghostTinyBtn" onClick={props.autoLayout} title="自动排版">
+            <LayoutGrid size={14} /> 排版
+          </button>
+        </div>
         {categoryOrder.map((category) => {
           const specs = (Object.keys(nodeSpecs) as WorkflowNodeType[]).map((type) => nodeSpecs[type]).filter((spec) => spec.category === category);
           if (!specs.length) return null;
@@ -188,9 +195,8 @@ function WorkflowDesignerContent(props: WorkflowDesignerProps) {
                     setPropertyPanelOpen(true);
                   }}
                 >
-                  <span className={`dot ${spec.accent}`} />
+                  <span className={`paletteIcon ${spec.accent}`}>{spec.icon}</span>
                   <strong>{spec.displayName}</strong>
-                  <small>{spec.description}</small>
                   <Plus size={14} />
                 </button>
               ))}

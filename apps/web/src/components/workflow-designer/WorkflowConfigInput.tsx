@@ -1,4 +1,4 @@
-import { Braces, ChevronDown, Code2, FileJson, FileText, Pilcrow, Plus, Search, Sparkles, Type, X } from "lucide-react";
+import { Braces, ChevronDown, Code2, FileJson, FileText, Info, Pilcrow, Plus, Search, Sparkles, Type, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Field } from "../ui";
 import type { WorkflowVariableGroup, WorkflowVariableOption } from "./workflowVariables";
@@ -22,6 +22,7 @@ export function WorkflowConfigInput({
   placeholder,
   variables = [],
   allowVariables = true,
+  hideModeToolbar = false,
   onChange,
 }: {
   label: string;
@@ -31,6 +32,7 @@ export function WorkflowConfigInput({
   placeholder?: string;
   variables?: WorkflowVariableOption[];
   allowVariables?: boolean;
+  hideModeToolbar?: boolean;
   onChange: (value: string) => void;
 }) {
   const [activeMode, setActiveMode] = useState<InputMode>(mode);
@@ -43,20 +45,48 @@ export function WorkflowConfigInput({
   );
 
   return (
-    <Field label={label} hint={hint}>
+    <Field label={label}>
       <div className={`workflowConfigInput ${activeMode}`}>
-        <div className="configInputToolbar" role="tablist" aria-label={`${label} 输入方式`}>
-          {modes.map((item) => (
-            <button
-              key={item.mode}
-              type="button"
-              className={activeMode === item.mode ? "active" : ""}
-              onClick={() => setActiveMode(item.mode)}
-            >
-              {item.icon}
-              <span>{item.label}</span>
-            </button>
-          ))}
+        <div className="configInputMetaRow">
+          {!hideModeToolbar && (
+            <div className="configInputToolbar" role="tablist" aria-label={`${label} 输入方式`}>
+              {modes.map((item) => (
+                <button
+                  key={item.mode}
+                  type="button"
+                  className={activeMode === item.mode ? "active" : ""}
+                  title={item.label}
+                  aria-label={item.label}
+                  onClick={() => setActiveMode(item.mode)}
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="configInputTools">
+            {hint && (
+              <span className="configHintIcon" title={hint} aria-label={hint}>
+                <Info size={13} />
+              </span>
+            )}
+            {allowVariables && (
+              <VariableReferencePicker
+                open={pickerOpen}
+                totalCount={variables.length}
+                variables={visibleVariables}
+                query={variableQuery}
+                onOpenChange={setPickerOpen}
+                onQueryChange={setVariableQuery}
+                onInsert={(path) => {
+                  onChange(insertVariable(value, path));
+                  setPickerOpen(false);
+                  setVariableQuery("");
+                }}
+              />
+            )}
+          </div>
         </div>
         {activeMode === "richText" ? (
           <div
@@ -76,21 +106,6 @@ export function WorkflowConfigInput({
             placeholder={placeholder || modePlaceholder(activeMode)}
             spellCheck={activeMode !== "json"}
             onChange={(event) => onChange(event.target.value)}
-          />
-        )}
-        {allowVariables && (
-          <VariableReferencePicker
-            open={pickerOpen}
-            totalCount={variables.length}
-            variables={visibleVariables}
-            query={variableQuery}
-            onOpenChange={setPickerOpen}
-            onQueryChange={setVariableQuery}
-            onInsert={(path) => {
-              onChange(insertVariable(value, path));
-              setPickerOpen(false);
-              setVariableQuery("");
-            }}
           />
         )}
       </div>
@@ -119,10 +134,15 @@ function VariableReferencePicker({
   return (
     <div className="variablePickerWrap" aria-label="可插入变量">
       <div className="variableInsertRow">
-        <span><Sparkles size={13} /> {totalCount ? `${totalCount} 个可引用变量` : "暂无可引用变量"}</span>
-        <button type="button" disabled={!totalCount} onClick={() => onOpenChange(!open)}>
+        <span title={totalCount ? `${totalCount} 个可引用变量` : "暂无可引用变量"}><Sparkles size={13} /> {totalCount}</span>
+        <button
+          type="button"
+          disabled={!totalCount}
+          title="插入变量"
+          aria-label="插入变量"
+          onClick={() => onOpenChange(!open)}
+        >
           <Braces size={13} />
-          插入变量
           <ChevronDown size={13} />
         </button>
       </div>

@@ -1,4 +1,4 @@
-import { Braces } from "lucide-react";
+import { Braces, FileJson, Type } from "lucide-react";
 import type { WorkflowDesignerProps, WorkflowNode } from "../../types";
 import { WorkflowConfigInput } from "./WorkflowConfigInput";
 import { availableVariablesForNode } from "./workflowVariables";
@@ -10,16 +10,35 @@ export function NodeOutputSection({ node, workflow }: { node: WorkflowNode; work
     <section className="propertySection ioSection">
       <div className="propertySectionTitle"><Braces size={15} /><strong>输出</strong></div>
       <div className="workflowOutputEditor">
-        <div className="segmentedControl compact">
-          <button className={output.format === "text" ? "active" : ""} onClick={() => workflow.updateNodeOutput(node.id, { format: "text" })}>文本</button>
-          <button className={output.format === "json" ? "active" : ""} onClick={() => workflow.updateNodeOutput(node.id, { format: "json" })}>JSON</button>
+        <div className="outputFormatSwitch" role="tablist" aria-label="输出格式">
+          <button
+            type="button"
+            className={output.format === "text" ? "active" : ""}
+            title="文本"
+            aria-label="文本"
+            onClick={() => workflow.updateNodeOutput(node.id, { format: "text" })}
+          >
+            <Type size={13} />
+            <span>文本</span>
+          </button>
+          <button
+            type="button"
+            className={output.format === "json" ? "active" : ""}
+            title="JSON"
+            aria-label="JSON"
+            onClick={() => workflow.updateNodeOutput(node.id, { format: "json" })}
+          >
+            <FileJson size={13} />
+            <span>JSON</span>
+          </button>
         </div>
         <WorkflowConfigInput
           label="输出值"
-          mode={output.format === "json" ? "json" : "variable"}
+          mode={output.format === "json" ? "json" : "plain"}
           value={output.value}
           variables={variables}
           placeholder={output.format === "json" ? "{\"answer\":\"{{nodes.answer.text}}\"}" : "{{nodes.answer.text}}"}
+          hideModeToolbar
           onChange={(value) => workflow.updateNodeOutput(node.id, { value })}
         />
       </div>

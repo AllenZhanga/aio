@@ -89,6 +89,32 @@ dxnow/aio:${VERSION}
 
 5. Log in with a configured console account, create an app, publish it, generate a Runtime API Key, and call the runtime API.
 
+### Rebuild and Restart Docker Service
+
+After changing code, rebuild the Aio image and restart the application container:
+
+```bash
+docker compose up -d --build aio
+```
+
+Restart the full embedded stack, including Postgres, Redis, MinIO, and Qdrant:
+
+```bash
+docker compose up -d --build
+```
+
+View logs after restart:
+
+```bash
+docker compose logs -f aio
+```
+
+Stop the stack:
+
+```bash
+docker compose down
+```
+
 ## Console Authentication
 
 Private deployments require console login. The web console calls:

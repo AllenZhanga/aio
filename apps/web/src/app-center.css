@@ -322,7 +322,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .modalBackdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 22px; background: rgba(15, 23, 42, .36); backdrop-filter: blur(8px); }
-.drawerBackdrop { position: fixed; inset: 0; z-index: 55; display: flex; justify-content: flex-end; background: rgba(15, 23, 42, .34); backdrop-filter: blur(6px); }
+.drawerBackdrop { position: fixed; inset: 0; z-index: 140; display: flex; justify-content: flex-end; background: rgba(15, 23, 42, .34); backdrop-filter: blur(6px); }
 .sideDrawer { width: min(720px, 100%); height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; border-left: 1px solid #dfe6f1; background: #fff; box-shadow: -24px 0 70px rgba(15, 23, 42, .20); }
 .sideDrawer header, .sideDrawer footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 16px 18px; border-bottom: 1px solid #e5eaf3; }
 .sideDrawer footer { border-top: 1px solid #e5eaf3; border-bottom: 0; justify-content: flex-end; }
@@ -772,6 +772,7 @@ button.entityRow { cursor: pointer; }
 .traceBody p { margin: 5px 0 0; color: #718098; font-size: 12px; }
 
 .agentLayout { display: grid; grid-template-columns: minmax(420px, 1fr) 340px; gap: 16px; padding: 16px 20px; }
+.agentLayout.simple { grid-template-columns: minmax(560px, 1fr) 280px; align-items: start; }
 .agentModeRail, .designCard { border: 1px solid #dfe6f1; border-radius: 13px; background: #fff; box-shadow: 0 8px 22px rgba(40, 55, 85, .04); }
 .agentModeRail { padding: 10px; height: fit-content; }
 .agentModeRail button { width: 100%; justify-content: flex-start; min-height: 42px; margin-bottom: 6px; padding: 0 10px; color: #5d6b85; background: transparent; font-weight: 800; }
@@ -786,8 +787,8 @@ button.entityRow { cursor: pointer; }
 .agentBlockTitle { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 18px 0 10px; }
 .agentBlockTitle strong { color: #172033; font-size: 14px; }
 .agentBlockTitle span { color: #7b8aa3; font-size: 12px; line-height: 1.45; text-align: right; }
-.agentModelRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 10px; }
-.agentSettingsBtn { margin-top: 20px; color: #2563eb; border-color: #bfdbfe; background: #eff6ff; }
+.agentModelRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; }
+.agentSettingsBtn { min-height: 38px; margin-bottom: 13px; color: #2563eb; border-color: #bfdbfe; background: #eff6ff; white-space: nowrap; }
 .formGrid.two { display: grid; grid-template-columns: 1fr 170px; gap: 14px; }
 .opsMain .formGrid.two { grid-template-columns: minmax(260px, .92fr) minmax(340px, 1.08fr); align-items: stretch; }
 .field { display: grid; gap: 7px; margin-bottom: 13px; color: #34415b; font-size: 13px; font-weight: 700; }
@@ -959,15 +960,24 @@ button.entityRow { cursor: pointer; }
 .designCard h3 { margin: 0 0 12px; font-size: 14px; }
 .designCard.preview pre, .definitionPreview pre { max-height: 260px; min-height: 180px; padding: 12px; border-radius: 10px; background: #f8fafc; border: 1px solid #e5eaf3; }
 
-.workflowLayout { display: grid; grid-template-columns: 220px minmax(520px, 1fr); gap: 14px; padding: 14px; height: calc(100vh - 116px); min-height: 640px; }
+.workflowLayout { display: grid; grid-template-columns: 176px minmax(520px, 1fr); gap: 14px; padding: 14px; height: calc(100vh - 116px); min-height: 640px; }
 .nodePalette { display: grid; align-content: start; gap: 8px; overflow: auto; scrollbar-gutter: stable; }
+.nodePaletteHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.nodePaletteHeader h3 { margin: 0; }
+.nodePaletteHeader .ghostTinyBtn { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 8px; border: 1px solid #dbe2ee; border-radius: 8px; color: #34415b; background: #fff; font-size: 12px; font-weight: 900; }
 .paletteGroup { display: grid; gap: 7px; }
 .paletteGroup > span { margin: 8px 2px 0; color: #7b8aa3; font-size: 11px; font-weight: 950; letter-spacing: .08em; text-transform: uppercase; }
-.paletteItem { width: 100%; display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; grid-template-areas: "dot title add" ". desc add"; justify-content: stretch; align-items: center; column-gap: 9px; row-gap: 3px; min-height: 58px; padding: 9px 10px; border: 1px solid #e1e7f2; background: linear-gradient(180deg, #fff, #fbfdff); color: #24324b; text-align: left; }
-.paletteItem .dot { grid-area: dot; }
-.paletteItem strong { grid-area: title; min-width: 0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.paletteItem small { grid-area: desc; min-width: 0; color: #78869e; font-size: 11px; line-height: 1.35; display: -webkit-box; line-clamp: 2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.paletteItem svg { grid-area: add; color: #2563eb; }
+.paletteItem { width: 100%; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; justify-content: stretch; align-items: center; column-gap: 8px; min-height: 40px; padding: 0 9px; border: 1px solid #e1e7f2; background: linear-gradient(180deg, #fff, #fbfdff); color: #24324b; text-align: left; }
+.paletteIcon { display: grid; width: 22px; height: 22px; place-items: center; border-radius: 7px; color: #fff; }
+.paletteIcon.green { background: #16a36b; }
+.paletteIcon.blue { background: #2563eb; }
+.paletteIcon.amber { background: #f59e0b; }
+.paletteIcon.red { background: #ef4444; }
+.paletteIcon.violet { background: #7c3aed; }
+.paletteIcon.slate { background: #64748b; }
+.paletteItem strong { min-width: 0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.paletteItem > svg { color: #2563eb; }
+.paletteIcon svg { color: #fff; }
 .paletteItem:hover { border-color: #bfdbfe; background: #f7fbff; box-shadow: inset 0 0 0 1px rgba(37, 99, 235, .05); }
 .gestureTip { display: flex; gap: 8px; margin: 10px 0 0; padding: 10px; border-radius: 10px; color: #64748b; background: #f7f9fd; font-size: 12px; line-height: 1.45; }
 .workflowCanvas { position: relative; overflow: hidden; border: 1px solid #dfe6f1; border-radius: 14px; background: radial-gradient(circle at 16px 16px, rgba(37, 99, 235, .16) 1px, transparent 1px), #fbfdff; background-size: 26px 26px; touch-action: none; }
@@ -988,7 +998,7 @@ button.entityRow { cursor: pointer; }
 .workflowNode.condition { background: linear-gradient(135deg, #fff, #f4f0ff); }
 .nodeHead { display: flex; align-items: center; gap: 8px; }
 .nodeHead strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.workflowNode p { margin: 8px 0 4px; color: #66758f; font-size: 12px; font-weight: 700; }
+.workflowNode p { display: -webkit-box; margin: 8px 0 4px; color: #66758f; font-size: 12px; font-weight: 700; line-height: 1.35; overflow: hidden; line-clamp: 2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .workflowNode small { color: #94a3b8; font-size: 11px; font-weight: 800; }
 .nodeIoSummary { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .nodeIoSummary span { max-width: 100%; padding: 3px 7px; border-radius: 999px; color: #526179; background: #eef3fb; font-size: 11px; font-weight: 850; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -1017,7 +1027,7 @@ button.entityRow { cursor: pointer; }
   z-index: 25;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  width: min(460px, calc(100% - 36px));
+  width: min(500px, calc(100% - 36px));
   max-height: calc(100% - 36px);
   border: 1px solid rgba(205, 217, 234, .96);
   border-radius: 14px;
@@ -1026,18 +1036,18 @@ button.entityRow { cursor: pointer; }
   backdrop-filter: blur(10px);
   pointer-events: auto;
 }
-.propertyPanelHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px; border-bottom: 1px solid #e7edf6; }
-.propertyPanelTitle { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; min-width: 0; }
-.propertyPanelTitle .dot { margin-top: 6px; }
-.propertyPanelTitle h3 { margin: 0; color: #172033; font-size: 15px; line-height: 1.3; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.propertyPanelTitle p { margin: 4px 0 0; color: #718098; font-size: 12px; line-height: 1.45; }
+.propertyPanelHeader { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #e7edf6; }
+.propertyPanelTitle { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; min-width: 0; }
+.propertyPanelTitle .dot { margin-top: 0; }
+.propertyPanelTitle h3 { margin: 0; color: #172033; font-size: 14px; line-height: 1.25; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.propertyPanelTitle p { margin: 2px 0 0; color: #718098; font-size: 11px; line-height: 1.35; }
 .propertyTitleInput, .propertyDescInput { width: 100%; min-height: 24px; padding: 0; border: 0; background: transparent; box-shadow: none; }
-.propertyTitleInput { color: #172033; font-size: 15px; font-weight: 950; }
-.propertyDescInput { color: #718098; font-size: 12px; }
+.propertyTitleInput { color: #172033; font-size: 14px; font-weight: 950; }
+.propertyDescInput { min-height: 20px; color: #718098; font-size: 11px; }
 .propertyTitleInput:focus, .propertyDescInput:focus { outline: none; box-shadow: none; }
-.propertyPanelBody { display: grid; gap: 12px; min-height: 0; padding: 14px; overflow: auto; scrollbar-gutter: stable; }
-.propertySection { display: grid; gap: 10px; padding: 12px; border: 1px solid #e3ebf6; border-radius: 12px; background: #fbfdff; }
-.propertySectionTitle { display: inline-flex; align-items: center; gap: 7px; color: #24324b; font-size: 13px; }
+.propertyPanelBody { display: grid; gap: 9px; min-height: 0; padding: 10px 12px; overflow: auto; scrollbar-gutter: stable; }
+.propertySection { display: grid; gap: 8px; padding: 9px; border: 1px solid #e3ebf6; border-radius: 10px; background: #fbfdff; }
+.propertySectionTitle { display: inline-flex; align-items: center; gap: 6px; color: #24324b; font-size: 12px; line-height: 1.2; }
 .ioSection { background: linear-gradient(180deg, #fbfdff, #f6faff); }
 .propertyIoGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 .propertyIoGrid.single { grid-template-columns: 1fr; }
@@ -1046,19 +1056,29 @@ button.entityRow { cursor: pointer; }
 .propertyIoGrid strong { display: block; margin-top: 4px; color: #172033; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .propertyIoGrid p { margin: 5px 0 0; color: #718098; font-size: 11px; line-height: 1.4; }
 .propertyAdvanced textarea { min-height: 150px; font-family: SFMono-Regular, Consolas, monospace; font-size: 11px; }
-.workflowOutputEditor, .llmConfigFields { display: grid; gap: 10px; }
-.runtimeSection input { min-height: 36px; }
-.nodeInputMappings { display: grid; gap: 8px; min-width: 0; }
-.nodeInputHeader { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.4fr) 34px; gap: 8px; align-items: center; color: #8a95aa; font-size: 12px; font-weight: 900; }
-.nodeInputHeader button { display: grid; width: 34px; height: 34px; place-items: center; border: 0; border-radius: 8px; color: #1d4ed8; background: #e8edff; }
-.nodeInputRows { display: grid; gap: 8px; }
-.nodeInputRow { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.4fr) 28px; gap: 8px; align-items: start; }
-.nodeInputRow > input, .nodeInputValueCell > input, .nodeInputValueCell > select { min-width: 0; min-height: 36px; border-radius: 9px; font-size: 13px; }
-.nodeInputValueCell { position: relative; display: grid; grid-template-columns: 72px minmax(0, 1fr) 34px; gap: 6px; min-width: 0; }
-.nodeInputValueCell > select { padding: 0 8px; color: #5b667a; font-weight: 900; }
-.nodeInputValueCell > button { display: grid; width: 34px; height: 36px; place-items: center; border: 1px solid #bfdbfe; border-radius: 9px; color: #1d4ed8; background: #eff6ff; }
-.nodeInputRemove { width: 28px; height: 36px; padding: 0; border: 0; color: #475569; background: transparent; font-size: 20px; line-height: 1; }
-.nodeInputEmpty { display: flex; gap: 8px; align-items: flex-start; padding: 10px; border: 1px dashed #cbd7ea; border-radius: 10px; color: #718098; background: #fff; font-size: 12px; line-height: 1.45; }
+.workflowOutputEditor, .llmConfigFields { display: grid; gap: 8px; }
+.outputFormatSwitch { display: inline-flex; justify-self: start; gap: 3px; padding: 2px; border: 1px solid #e1e7f2; border-radius: 8px; background: #f8fbff; }
+.outputFormatSwitch button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 24px; padding: 0 8px; border: 0; border-radius: 6px; color: #526078; background: transparent; font-size: 11px; font-weight: 900; cursor: pointer; }
+.outputFormatSwitch button.active { color: #1d4ed8; background: #fff; box-shadow: 0 4px 12px rgba(37, 99, 235, .10); }
+.workflowPropertyPanel .field { gap: 4px; margin-bottom: 8px; font-size: 12px; }
+.workflowPropertyPanel .field small { margin-top: 1px; font-size: 11px; line-height: 1.3; }
+.workflowPropertyPanel input, .workflowPropertyPanel select { min-height: 32px; font-size: 12px; }
+.runtimeSection input { min-height: 32px; }
+.nodeInputMappings { display: grid; gap: 6px; min-width: 0; }
+.nodeInputHeader { display: grid; grid-template-columns: minmax(0, .76fr) minmax(0, 1.46fr) 26px; gap: 6px; align-items: center; color: #8a95aa; font-size: 11px; font-weight: 900; }
+.nodeInputHeader button { display: grid; width: 26px; height: 26px; place-items: center; border: 0; border-radius: 7px; color: #1d4ed8; background: #e8edff; }
+.nodeInputRows { display: grid; gap: 6px; }
+.nodeInputRow { display: grid; grid-template-columns: minmax(0, .76fr) minmax(0, 1.46fr) 24px; gap: 6px; align-items: start; }
+.nodeInputRow > input, .nodeInputValueCell > input, .nodeInputValueCell > select { min-width: 0; min-height: 32px; border-radius: 8px; font-size: 12px; }
+.nodeInputValueCell { position: relative; display: grid; grid-template-columns: 60px minmax(0, 1fr) 30px; gap: 5px; min-width: 0; }
+.nodeInputValueCell > select { padding: 0 6px; color: #5b667a; font-weight: 900; }
+.nodeInputValueCell > button { display: grid; width: 30px; height: 32px; place-items: center; border: 1px solid #bfdbfe; border-radius: 8px; color: #1d4ed8; background: #eff6ff; }
+.nodeInputRemove { display: grid; width: 24px; height: 32px; place-items: center; padding: 0; border: 0; color: #64748b; background: transparent; line-height: 1; }
+.nodeInputEmpty { display: flex; gap: 7px; align-items: flex-start; padding: 8px; border: 1px dashed #cbd7ea; border-radius: 9px; color: #718098; background: #fff; font-size: 11px; line-height: 1.35; }
+.nodeSpecificFields { display: grid; gap: 8px; }
+.nodeOutputHint { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 9px; border: 1px solid #e3ebf6; border-radius: 10px; background: #fff; }
+.nodeOutputHint strong { flex-basis: 100%; color: #172033; font-size: 12px; }
+.nodeOutputHint span, .nodeOutputHint code { max-width: 100%; padding: 3px 7px; border-radius: 999px; color: #1d4ed8; background: #eff6ff; font-family: SFMono-Regular, Consolas, monospace; font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .inputVariableMenu { position: absolute; top: 42px; right: 0; z-index: 45; width: min(360px, 100vw - 48px); max-height: 360px; overflow: auto; padding: 10px; border: 1px solid #d7e4f5; border-radius: 12px; background: #fff; box-shadow: 0 18px 44px rgba(15, 23, 42, .18); }
 .inputVariableMenu header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .inputVariableMenu header strong { color: #172033; font-size: 12px; }
@@ -1071,12 +1091,17 @@ button.entityRow { cursor: pointer; }
 .inputVariableMenu section button code { color: #1d4ed8; font-family: SFMono-Regular, Consolas, monospace; font-size: 11px; }
 .inputVariableMenu section button em { grid-row: span 2; padding: 2px 6px; border-radius: 999px; color: #64748b; background: #eef2f7; font-size: 10px; font-style: normal; font-weight: 900; }
 .inputVariableMenu p { margin: 0; color: #718098; font-size: 12px; }
-.workflowConfigInput { display: grid; gap: 8px; min-width: 0; padding: 8px; border: 1px solid #dfe8f5; border-radius: 12px; background: #fff; }
-.configInputToolbar { display: flex; flex-wrap: wrap; gap: 6px; }
-.configInputToolbar button { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 9px; border: 1px solid #e2eaf6; border-radius: 8px; color: #53627b; background: #f8fbff; font-size: 12px; font-weight: 900; }
+.workflowConfigInput { display: grid; gap: 6px; min-width: 0; padding: 6px; border: 1px solid #dfe8f5; border-radius: 10px; background: #fff; }
+.configInputMetaRow { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; }
+.configInputMetaRow > .configInputTools:only-child { margin-left: auto; }
+.configInputToolbar { display: flex; min-width: 0; flex-wrap: wrap; gap: 4px; }
+.configInputToolbar button { display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 0 7px; border: 1px solid #e2eaf6; border-radius: 7px; color: #53627b; background: #f8fbff; font-size: 11px; font-weight: 900; }
+.configInputTools { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; }
+.configHintIcon { display: grid; width: 24px; height: 24px; place-items: center; border: 1px solid #e2eaf6; border-radius: 7px; color: #64748b; background: #fff; cursor: help; }
 .configInputToolbar button.active { border-color: #bfdbfe; color: #1d4ed8; background: #eff6ff; box-shadow: inset 0 0 0 1px rgba(37, 99, 235, .06); }
-.workflowConfigInput textarea, .richTextSurface { min-height: 96px; width: 100%; padding: 10px; border: 1px solid #e3ebf6; border-radius: 10px; background: #fbfdff; color: #172033; font-size: 13px; line-height: 1.5; resize: vertical; }
-.workflowConfigInput.json textarea { min-height: 150px; font-family: SFMono-Regular, Consolas, monospace; font-size: 12px; }
+.workflowConfigInput textarea, .richTextSurface { min-height: 62px; width: 100%; padding: 8px; border: 1px solid #e3ebf6; border-radius: 9px; background: #fbfdff; color: #172033; font-size: 12px; line-height: 1.4; resize: vertical; }
+.workflowConfigInput.markdown textarea, .workflowConfigInput.richText .richTextSurface { min-height: 88px; }
+.workflowConfigInput.json textarea { min-height: 116px; font-family: SFMono-Regular, Consolas, monospace; font-size: 11px; }
 .richTextSurface { overflow: auto; outline: none; white-space: pre-wrap; }
 .richTextSurface:empty::before { content: attr(data-placeholder); color: #94a3b8; }
 .variableChipBar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -1084,9 +1109,9 @@ button.entityRow { cursor: pointer; }
 .variableChipBar span { color: #64748b; background: #f1f5f9; }
 .variableChipBar button { border: 1px solid #dbeafe; color: #1e40af; background: #eff6ff; font-family: SFMono-Regular, Consolas, monospace; }
 .variablePickerWrap { position: relative; min-width: 0; }
-.variableInsertRow { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; }
-.variableInsertRow > span { display: inline-flex; min-width: 0; align-items: center; gap: 5px; color: #64748b; font-size: 11px; font-weight: 850; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.variableInsertRow > button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; min-height: 28px; padding: 0 9px; border: 1px solid #bfdbfe; border-radius: 8px; color: #1d4ed8; background: #eff6ff; font-size: 12px; font-weight: 900; }
+.variableInsertRow { display: inline-flex; align-items: center; justify-content: flex-end; gap: 5px; min-height: 24px; }
+.variableInsertRow > span { display: inline-flex; min-width: 0; align-items: center; gap: 3px; color: #64748b; font-size: 11px; font-weight: 850; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.variableInsertRow > button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 2px; min-height: 24px; padding: 0 6px; border: 1px solid #bfdbfe; border-radius: 7px; color: #1d4ed8; background: #eff6ff; font-size: 11px; font-weight: 900; }
 .variablePicker {
   position: absolute;
   top: calc(100% + 6px);
@@ -1094,7 +1119,7 @@ button.entityRow { cursor: pointer; }
   z-index: 40;
   display: grid;
   gap: 8px;
-  width: min(360px, 100%);
+  width: min(320px, calc(100vw - 72px));
   padding: 10px;
   border: 1px solid #d7e4f5;
   border-radius: 12px;

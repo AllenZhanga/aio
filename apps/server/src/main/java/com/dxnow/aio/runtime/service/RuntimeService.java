@@ -334,12 +334,17 @@ public class RuntimeService {
       if (datasetId.isBlank()) {
         continue;
       }
-      if (!workspaceId.equals(knowledgeService.getDataset(tenantId, datasetId).getWorkspaceId())) {
-        throw new IllegalArgumentException("Knowledge dataset is not scoped to this workspace");
-      }
       int topK = asInt(config.getOrDefault("topK", 5));
       double threshold = asDouble(config.getOrDefault("scoreThreshold", 0.0));
-      records.addAll(knowledgeService.retrieve(tenantId, datasetId, query, topK, threshold));
+      try {
+        if (!workspaceId.equals(knowledgeService.getDataset(tenantId, datasetId).getWorkspaceId())) {
+          continue;
+        }
+        records.addAll(knowledgeService.retrieve(tenantId, datasetId, query, topK, threshold));
+      } catch (EntityNotFoundException ignored) {
+        // Published Agent versions can keep references to datasets that were later deleted.
+        // Runtime should still answer with the remaining configured capability.
+      }
     }
     return records;
   }
@@ -521,7 +526,23 @@ public class RuntimeService {
       Object inputConfig = config.containsKey("input") ? interpolate(config.get("input"), context) : context;
       output.putAll(toolService.executeTool(tool, castMap(inputConfig)));
     } else if ("agent".equals(type)) {
-      output.put("answer", "Agent node executed: " + stringValue(interpolate(config.get("query"), context)));
+      String agentAppId = stringValue(config.get("appId"));
+      if (agentAppId.isBlank()) {
+        throw new IllegalArgumentException("Agent node requires config.appId");
+      }
+      AiApp agentApp = appRepository.findById(agentAppId)
+          .filter(app -> run.getTenantId().equals(app.getTenantId()))
+          .filter(app -> run.getWorkspaceId().equals(app.getWorkspaceId()))
+          .filter(app -> "agent".equals(app.getType()))
+          .orElseThrow(() -> new EntityNotFoundException("Agent app not found in workspace"));
+      if (agentApp.getPublishedVersionId() == null || agentApp.getPublishedVersionId().isBlank()) {
+        throw new EntityNotFoundException("Agent app has no published version");
+      }
+      AiAppVersion agentVersion = versionRepository.findById(agentApp.getPublishedVersionId())
+          .orElseThrow(() -> new EntityNotFoundException("Agent app has no published version"));
+      Map<String, Object> request = new LinkedHashMap<>();
+      request.put("query", stringValue(interpolate(config.get("query"), context)));
+      output.putAll(invokeAgent(agentApp, agentVersion, request, run));
     } else if ("http_request".equals(type)) {
       AiTool tool = new AiTool();
       tool.setId("inline_http");

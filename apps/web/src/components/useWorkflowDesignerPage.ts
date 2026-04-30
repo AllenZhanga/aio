@@ -303,6 +303,7 @@ export function useWorkflowDesignerPage() {
       finishConnect,
       moveOnCanvas,
       stopCanvasInteraction,
+      autoLayout,
       selectNode: (nodeId: string) => {
         setSelectedNodeId(nodeId);
         setSelectedEdgeId("");
@@ -313,4 +314,34 @@ export function useWorkflowDesignerPage() {
       },
     },
   };
+
+  function autoLayout() {
+    const depths = new Map<string, number>();
+    const queue = ["start"];
+    depths.set("start", 0);
+    while (queue.length) {
+      const current = queue.shift()!;
+      const currentDepth = depths.get(current) || 0;
+      for (const edge of edges.filter((item) => item.from === current)) {
+        const nextDepth = currentDepth + 1;
+        if ((depths.get(edge.to) ?? -1) < nextDepth) {
+          depths.set(edge.to, nextDepth);
+          queue.push(edge.to);
+        }
+      }
+    }
+    const grouped = new Map<number, WorkflowNode[]>();
+    for (const node of nodes) {
+      const depth = depths.get(node.id) ?? 0;
+      grouped.set(depth, [...(grouped.get(depth) || []), node]);
+    }
+    setNodes((current) =>
+      current.map((node) => {
+        const depth = depths.get(node.id) ?? 0;
+        const peers = grouped.get(depth) || [];
+        const row = peers.findIndex((item) => item.id === node.id);
+        return { ...node, x: 80 + depth * 300, y: 120 + Math.max(0, row) * 170 };
+      }),
+    );
+  }
 }

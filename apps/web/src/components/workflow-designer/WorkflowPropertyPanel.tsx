@@ -53,6 +53,9 @@ export function WorkflowPropertyPanel({
               nodes={workflow.nodes}
               edges={workflow.edges}
               modelOptions={workflow.modelOptions}
+              apps={workflow.apps}
+              datasets={workflow.datasets}
+              tools={workflow.tools}
               updateNodeConfig={workflow.updateNodeConfig}
             />
           </section>

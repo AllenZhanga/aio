@@ -74,11 +74,12 @@ export const nodeSpecs: Record<WorkflowNodeType, WorkflowNodeSpec> = {
     icon: <Bot size={17} />,
     accent: "blue",
     defaultLabel: "调用智能体",
-    defaultConfig: { query: "{{input.query}}" },
+    defaultConfig: { appId: "", query: "{{input.query}}" },
     inputSummary: ["query"],
     outputSummary: ["answer", "outputs"],
     configFields: [
-      { key: "query", label: "输入问题", kind: "variableExpr", placeholder: "{{inputs.question}}" },
+      { key: "appId", label: "智能体应用", kind: "text" },
+      { key: "query", label: "输入问题", kind: "variableExpr", placeholder: "{{input.query}}" },
     ],
   },
   tool: {
@@ -126,7 +127,7 @@ export const nodeSpecs: Record<WorkflowNodeType, WorkflowNodeSpec> = {
     defaultLabel: "知识检索",
     defaultConfig: { datasetId: "", query: "{{input.query}}", topK: 5, scoreThreshold: 0 },
     inputSummary: ["query"],
-    outputSummary: ["chunks", "query"],
+    outputSummary: ["chunks"],
     configFields: [
       { key: "datasetId", label: "知识库 ID", kind: "text" },
       { key: "query", label: "检索问题", kind: "variableExpr" },
@@ -240,12 +241,12 @@ export const nodeSpecs: Record<WorkflowNodeType, WorkflowNodeSpec> = {
 };
 
 export const nodeCategoryLabels: Record<WorkflowNodeSpec["category"], string> = {
-  basic: "基础",
-  ai: "AI",
-  knowledge: "知识",
-  tool: "工具",
-  control: "控制",
-  human: "人工",
+  basic: "入口与变量",
+  ai: "模型与智能体",
+  knowledge: "数据检索",
+  tool: "工具插件",
+  control: "逻辑控制",
+  human: "人工协同",
   output: "输出",
 };
 

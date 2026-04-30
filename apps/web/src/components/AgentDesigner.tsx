@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bot, Check, Code2, Database, KeyRound, MessageSquare, PlayCircle, Settings2, ShieldCheck, SlidersHorizontal, Workflow } from "lucide-react";
+import { Bot, Check, Code2, Database, KeyRound, PlayCircle, ShieldCheck, SlidersHorizontal, Workflow } from "lucide-react";
 import { buildAgentDefinition } from "../appDefinitions";
 import type { AgentDraft, DatasetRecord, ModelOption } from "../types";
 import { Drawer, Field, Notice, PromptEditor } from "./ui";
@@ -22,7 +22,6 @@ export function AgentDesigner({
   setRuntimeKey: (value: string) => void;
 }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [experienceOpen, setExperienceOpen] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
   const [knowledgeDrawerOpen, setKnowledgeDrawerOpen] = useState(false);
   const definition = buildAgentDefinition(draft);
@@ -46,14 +45,6 @@ export function AgentDesigner({
         ...(missingDatasetCount > 0 ? [`${missingDatasetCount} 个已选数据集未加载`] : []),
       ].join("、")
     : "未选择知识库";
-  const readiness = [
-    { label: "模型", done: !!draft.providerAccountId && !!draft.model, detail: draft.model || "未选择模型" },
-    { label: "回答规则", done: !!draft.system.trim(), detail: draft.system.trim() ? "已配置" : "未填写角色与约束" },
-    { label: "对话体验", done: !!draft.opening.trim(), detail: draft.opening.trim() ? "已配置开场白" : "未填写开场白" },
-    { label: "知识能力", done: draft.knowledgeDatasetIds.length > 0, detail: draft.knowledgeDatasetIds.length ? `${draft.knowledgeDatasetIds.length} 个知识库` : "未挂载，可选" },
-  ];
-  const readinessCount = readiness.filter((item) => item.done).length;
-
   function selectProvider(providerId: string) {
     const firstModel =
       modelOptions.find((option) => option.providerId === providerId)?.model ||
@@ -72,7 +63,7 @@ export function AgentDesigner({
   }
 
   return (
-    <div className="agentLayout">
+    <div className="agentLayout simple">
       <section className="designCard mainDesignCard">
         <div className="sectionTitle">
           <Bot size={20} />
@@ -116,8 +107,9 @@ export function AgentDesigner({
               </select>
             </Field>
           </div>
-          <button className="iconBtn agentSettingsBtn" onClick={() => setAdvancedOpen(true)} title="高级行为" aria-label="高级行为">
+          <button className="ghostBtn agentSettingsBtn" onClick={() => setAdvancedOpen(true)} title="高级行为" aria-label="高级行为">
             <SlidersHorizontal size={18} />
+            高级行为
           </button>
         </div>
         <section className="promptEditor knowledgePicker">
@@ -151,46 +143,8 @@ export function AgentDesigner({
           onChange={(value) => setDraft({ ...draft, system: value })}
           icon={<ShieldCheck size={18} />}
         />
-        <div className="agentConfigTiles">
-          <button className="agentConfigTile" onClick={() => setExperienceOpen(true)}>
-            <MessageSquare size={18} />
-            <span>
-              <strong>对话体验</strong>
-              <small>{draft.opening.trim() || "配置开场白和最终用户看到的欢迎信息"}</small>
-            </span>
-          </button>
-          <button className="agentConfigTile" onClick={() => setAdvancedOpen(true)}>
-            <Workflow size={18} />
-            <span>
-              <strong>高级行为</strong>
-              <small>{draft.toolPlan.trim() || "配置规划策略、Temperature 等高级参数"}</small>
-            </span>
-          </button>
-        </div>
       </section>
       <aside className="previewStack">
-        <section className="designCard agentReadinessCard">
-          <div className="agentReadinessHeader">
-            <span><ShieldCheck size={16} /> 配置完成度</span>
-            <strong>{readinessCount}/{readiness.length}</strong>
-          </div>
-          <div className="agentReadinessList">
-            {readiness.map((item) => (
-              <article key={item.label} className={item.done ? "done" : "todo"}>
-                <Check size={13} />
-                <div><strong>{item.label}</strong><small>{item.detail}</small></div>
-              </article>
-            ))}
-          </div>
-        </section>
-        <section className="designCard conversationPreviewCard">
-          <div className="sectionTitle compactTitle">
-            <MessageSquare size={18} />
-            <div><h3>体验预览</h3><p>开场白会在体验页空会话中展示。</p></div>
-          </div>
-          <div className="previewChatBubble">{draft.opening.trim() || "暂未配置开场白"}</div>
-          <button className="ghostBtn" onClick={() => setExperienceOpen(true)}><Settings2 size={16} /> 编辑体验</button>
-        </section>
         <section className="designCard devToolsCard">
           <h3>开发调试</h3>
           <p>Runtime Key、Definition 和 Run Result 已收纳到调试抽屉。</p>
@@ -226,24 +180,6 @@ export function AgentDesigner({
             }
           />
         </Field>
-      </Drawer>
-      <Drawer
-        open={experienceOpen}
-        title="对话体验"
-        description="配置最终用户首次进入体验页时看到的欢迎信息。"
-        onClose={() => setExperienceOpen(false)}
-        className="agentExperienceDrawer"
-        footer={<button className="primaryBtn" onClick={() => setExperienceOpen(false)}><Check size={16} /> 完成</button>}
-      >
-        <Field label="开场白" hint="会在 Agent 体验页的空会话中展示，帮助用户理解这个智能体能做什么。">
-          <textarea
-            value={draft.opening}
-            onChange={(event) => setDraft({ ...draft, opening: event.target.value })}
-          />
-        </Field>
-        <div className="conversationPreviewCard inlinePreview">
-          <div className="previewChatBubble">{draft.opening.trim() || "暂未配置开场白"}</div>
-        </div>
       </Drawer>
       <Drawer
         open={debugOpen}

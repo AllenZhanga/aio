@@ -117,20 +117,64 @@ public class RuntimeAppController {
   }
 
   @PostMapping("/apps/{appId}/run")
-  public Map<String, Object> runWorkflow(
+  public Object runWorkflow(
       HttpServletRequest servletRequest,
       @PathVariable String appId,
       @RequestBody Map<String, Object> request) {
-    AiRun run = runtimeService.runWorkflow(principal(servletRequest), appId, request);
+    ApiKeyPrincipal principal = principal(servletRequest);
+    if ("streaming".equals(String.valueOf(request.get("response_mode")))) {
+      return streamWorkflow(principal, appId, request);
+    }
+    AiRun run = runtimeService.runWorkflow(principal, appId, request);
+    return workflowResponse(principal, run);
+  }
+
+  private SseEmitter streamWorkflow(ApiKeyPrincipal principal, String appId, Map<String, Object> request) {
+    SseEmitter emitter = new SseEmitter(180000L);
+    CompletableFuture.runAsync(() -> {
+      try {
+        emitter.send(SseEmitter.event().name("run_started").data(Map.of("app_id", appId)));
+        AiRun run = runtimeService.runWorkflow(principal, appId, request);
+        Map<String, Object> response = workflowResponse(principal, run);
+        if ("waiting".equals(run.getStatus())) {
+          emitter.send(SseEmitter.event().name("run_completed").data(response));
+        } else {
+          sendAnswerChunks(emitter, workflowStreamText(runtimeService.outputMap(run)));
+          emitter.send(SseEmitter.event().name("run_completed").data(response));
+        }
+        emitter.complete();
+      } catch (Exception exception) {
+        try {
+          String message = exception.getMessage() == null ? "Streaming workflow failed" : exception.getMessage();
+          emitter.send(SseEmitter.event().name("error").data(Map.of("message", message)));
+        } catch (Exception ignored) {
+        }
+        emitter.completeWithError(exception);
+      }
+    });
+    return emitter;
+  }
+
+  private Map<String, Object> workflowResponse(ApiKeyPrincipal principal, AiRun run) {
     Map<String, Object> response = new LinkedHashMap<>();
     response.put("run_id", run.getId());
     response.put("status", run.getStatus());
     if ("waiting".equals(run.getStatus()) && run.getCurrentWaitTaskId() != null) {
-      response.put("wait_task", runtimeService.waitTaskView(runtimeService.getWaitTask(principal(servletRequest), run.getCurrentWaitTaskId())));
+      response.put("wait_task", runtimeService.waitTaskView(runtimeService.getWaitTask(principal, run.getCurrentWaitTaskId())));
     } else {
       response.put("outputs", runtimeService.outputMap(run));
     }
     return response;
+  }
+
+  private String workflowStreamText(Map<String, Object> outputs) {
+    for (String key : List.of("answer", "text", "output", "result", "outputs")) {
+      Object value = outputs.get(key);
+      if (value != null) {
+        return String.valueOf(value);
+      }
+    }
+    return outputs.toString();
   }
 
   @GetMapping("/runs/{runId}")
