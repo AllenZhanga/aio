@@ -1,4 +1,4 @@
-import { AlertCircle, Building2, ClipboardCheck, Code2, Loader2, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
+import { AlertCircle, Building2, ClipboardCheck, Loader2, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import type { ApiKeyRecord, AuditEvent, AuthSession, TenantRecord, UserRecord, UsageSummary, WorkspaceRecord } from "../types";
 import { ActionBar, Drawer, EntityList, EntityRow, Field, StatePanel, useConfirmDialog } from "./ui";
 
@@ -49,7 +49,6 @@ export function OrgOpsPage(props: {
   const usage = props.usage;
   const isAdmin = props.session.role === "admin" || (!props.session.role && props.session.userId === "admin");
   const roleLabel = isAdmin ? "管理员" : "成员";
-  const activeKeys = props.apiKeys.filter((key) => key.status === "active").length;
   const confirmation = useConfirmDialog();
   const tenantIds = new Set(props.tenants.map((tenant) => tenant.id));
   const workspaceLabelById = new Map(props.workspaces.map((workspace) => [workspace.id, workspace.name || workspace.id]));
