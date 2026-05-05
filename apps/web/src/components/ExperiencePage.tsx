@@ -1,4 +1,4 @@
-import { Activity, AlertCircle, ArrowLeft, Bot, BookOpen, ClipboardCheck, FileText, Hash, Loader2, Play, Radio, Settings2, Sparkles, Workflow } from "lucide-react";
+import { Activity, AlertCircle, ArrowLeft, Bot, BookOpen, ClipboardCheck, FileText, Loader2, Play, Radio, Settings2, Sparkles, Workflow } from "lucide-react";
 import type { AppRecord, ExperienceMessage, RetrieveRecord, RuntimeUsage, RuntimeWaitTask } from "../types";
 import { Field, StatePanel } from "./ui";
 
@@ -150,40 +150,76 @@ function ExperienceBubble(props: {
       </article>
     );
   }
+  const split = message.role === "assistant" ? splitAssistantText(message.text || "", !!message.streaming) : null;
+  const primaryText = split?.answer || message.text || (message.streaming ? "正在生成..." : "");
   return (
     <article className={`chatBubble ${message.role}`}>
       <div className="bubbleMeta">
         {message.role === "user" ? "用户" : message.role === "assistant" ? "AI 应用" : "系统"}{message.meta ? ` · ${message.meta}` : ""}
         {message.streaming && <span className="streamPill"><Radio size={12} /> 接收中</span>}
       </div>
-      <div className="bubbleText">{renderMessageText(message.text || (message.streaming ? "正在生成..." : ""))}</div>
+      <div className="bubbleText">{renderMessageText(primaryText)}</div>
+      {message.role === "assistant" && split?.reasoning && (
+        <details className="bubbleThinking">
+          <summary>查看思考过程</summary>
+          <div>{renderMessageText(split.reasoning)}</div>
+        </details>
+      )}
       {message.role === "assistant" && <RuntimeMessageDetails message={message} />}
     </article>
   );
 }
 
 function RuntimeMessageDetails({ message }: { message: ExperienceMessage }) {
-  const hasStats = !!message.conversationId || !!message.runId || !!message.status || hasUsage(message.usage);
+  const hasStats = hasUsage(message.usage);
   const hasKnowledge = !!message.knowledge?.length;
   if (!hasStats && !hasKnowledge) return null;
   return (
     <div className="bubbleRuntimeDetails">
-      {hasStats && <UsageStrip runId={message.runId} conversationId={message.conversationId} usage={message.usage} />}
+      {hasStats && <UsageStrip usage={message.usage} />}
       {hasKnowledge && <KnowledgeReferences records={message.knowledge || []} />}
     </div>
   );
 }
 
-function UsageStrip({ runId, conversationId, usage }: { runId?: string; conversationId?: string; usage?: RuntimeUsage }) {
+function UsageStrip({ usage }: { usage?: RuntimeUsage }) {
   return (
     <div className="bubbleStats">
-      {runId && <span><Hash size={13} /> {runId}</span>}
-      {conversationId && <span>Conversation {conversationId}</span>}
-      {usage?.prompt_tokens !== undefined && <span>Prompt {formatNumber(usage.prompt_tokens)}</span>}
-      {usage?.completion_tokens !== undefined && <span>Completion {formatNumber(usage.completion_tokens)}</span>}
       {usage?.total_tokens !== undefined && <strong>Token {formatNumber(usage.total_tokens)}</strong>}
     </div>
   );
+}
+
+function splitAssistantText(text: string, streaming: boolean) {
+  if (!text.trim() || streaming) return { answer: text };
+
+  const thinkTag = text.match(/<think>([\s\S]*?)<\/think>/i);
+  if (thinkTag) {
+    const reasoning = thinkTag[1].trim();
+    const answer = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+    return { answer: answer || text, reasoning: reasoning || undefined };
+  }
+
+  const markerPatterns = [
+    /(?:^|\n)(?:最终(?:答复|回答|输出)|Final Answer|Answer)\s*[:：]\s*/i,
+    /(?:^|\n)(?:我会(?:这样)?(?:回复|说)|建议回复(?:如下)?|可回复为)\s*[:：]\s*/i,
+  ];
+
+  for (const pattern of markerPatterns) {
+    const match = pattern.exec(text);
+    if (!match || match.index < 0) continue;
+    const splitIndex = match.index + match[0].length;
+    const reasoning = text.slice(0, match.index).trim();
+    const answer = text.slice(splitIndex).trim();
+    if (answer) {
+      return {
+        answer,
+        reasoning: reasoning || undefined,
+      };
+    }
+  }
+
+  return { answer: text };
 }
 
 function KnowledgeReferences({ records }: { records: RetrieveRecord[] }) {
@@ -235,7 +271,7 @@ function scoreLabel(score: number) {
 }
 
 function hasUsage(usage?: RuntimeUsage) {
-  return usage?.prompt_tokens !== undefined || usage?.completion_tokens !== undefined || usage?.total_tokens !== undefined;
+  return usage?.total_tokens !== undefined;
 }
 
 function formatNumber(value?: number) {
